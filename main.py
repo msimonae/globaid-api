@@ -134,39 +134,53 @@ def get_competitors(keyword: str, country: str, original_asin: str) -> list:
         return []
 
 # --- Agente 3: Analisador de Inconsistências com Gemini ---
-def analyze_product_with_gemini(product_data: dict, country: str) -> str:
-    """Usa a IA do Gemini para analisar inconsistências entre texto e imagens (internacionalizado)."""
-    lang, _ = MARKET_MAP.get(country, ("English (US)", f"Amazon {country}"))
-    prompt_texts = {
-        "Português (Brasil)": {"persona": "Você é um analista de QA de e-commerce meticuloso...", "task": "Sua tarefa é encontrar inconsistências...", "instructions": "Analise o texto e as imagens...", "success_case": "Se consistente, declare: 'Nenhuma inconsistência encontrada.'", "text_header": "DADOS TEXTUAIS", "title_label": "Título", "features_label": "Destaques", "dimensions_label": "Dimensões", "image_header": "IMAGENS"},
-        "English (US)": {"persona": "You are a meticulous e-commerce QA analyst...", "task": "Your task is to find inconsistencies...", "instructions": "Analyze the text and images...", "success_case": "If consistent, state: 'No inconsistencies found.'", "text_header": "TEXTUAL DATA", "title_label": "Title", "features_label": "Highlights", "dimensions_label": "Dimensions", "image_header": "IMAGES"},
-        "Español (México)": {"persona": "Eres un analista de QA de e-commerce meticuloso...", "task": "Tu tarea es encontrar inconsistencias...", "instructions": "Analiza el texto y las imágenes...", "success_case": "Si es consistente, declara: 'No se encontraron inconsistencias.'", "text_header": "DATOS TEXTUALES", "title_label": "Título", "features_label": "Puntos clave", "dimensions_label": "Dimensiones", "image_header": "IMÁGENES"},
-    }
-    pt = prompt_texts.get(lang, prompt_texts["English (US)"])
-    
+def analyze_product_with_gemini(product_data: dict) -> str:
+    # (Sua função original - sem alterações)
+    if not product_data:
+        return "Não foi possível obter os dados do produto para análise."
+    product_dimensions_text = "N/A"
+    if info_table := product_data.get("product_information"):
+        for key, value in info_table.items():
+            if "dimens" in key.lower():
+                product_dimensions_text = value
+                break
     title = product_data.get("product_title", "N/A")
     features = "\n- ".join(product_data.get("about_product", []))
     image_urls = product_data.get("product_photos", [])
-    
+    if not image_urls:
+        return "Produto sem imagens para análise."
     prompt_parts = [
-        pt["persona"], pt["task"], pt["instructions"], pt["success_case"],
-        f"\n--- {pt['text_header']} ---", f"**{pt['title_label']}:** {title}",
-        f"**{pt['features_label']}:**\n- {features}", f"\n--- {pt['image_header']} ---",
+        "Você é um analista de controle de qualidade de e-commerce extremamente meticuloso e detalhista.",
+        "Sua principal tarefa é encontrar inconsistências factuais entre a descrição textual de um produto e suas imagens.",
+        "Analise o texto e as imagens a seguir. Aponte QUALQUER discrepância, por menor que seja, entre o que está escrito e o que é mostrado. Preste atenção especial aos dados estruturados, como dimensões, peso, voltagem, cor, material e quantidade de itens.",
+        "Se tudo estiver consistente, declare: 'Nenhuma inconsistência encontrada.'",
+        "\n--- DADOS TEXTUAIS DO PRODUTO ---",
+        f"**Título:** {title}",
+        f"**Destaques (Sobre este item):**\n- {features}",
+        f"**Dimensões do Produto (extraído da tabela de especificações):** {product_dimensions_text}",
+        "\n--- IMAGENS PARA ANÁLISE VISUAL ---",
     ]
-    
+    image_count = 0
     for url in image_urls[:5]:
         try:
             response = requests.get(url, timeout=10)
             response.raise_for_status()
-            prompt_parts.append(Image.open(io.BytesIO(response.content)))
-        except Exception: continue
-    
+            img = Image.open(io.BytesIO(response.content))
+            prompt_parts.append(img)
+            image_count += 1
+        except requests.exceptions.RequestException as e:
+            print(f"Aviso: Falha ao baixar a imagem {url}. Erro: {e}")
+        except Exception as e:
+            print(f"Aviso: Falha ao processar a imagem {url}. Erro: {e}")
+    if image_count == 0:
+        return "Nenhuma imagem pôde ser baixada para análise."
     try:
-        model = genai.GenerativeModel("gemini-1.5-pro-latest")
+        model = genai.GenerativeModel("gemini-1.5-flash-latest")
         response = model.generate_content(prompt_parts)
         return response.text
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao chamar a API do Gemini para análise: {e}")
+
 
 # --- Agente 4: Otimizador de Listing com Gemini ---
 def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competitors_data: list, url_info: dict) -> str:
@@ -234,3 +248,4 @@ def run_optimization_pipeline(request: OptimizeRequest):
         asin=asin,
         country=country
     )
+
