@@ -4,7 +4,7 @@ import re
 import io
 import requests
 import google.generativeai as genai
-from urllib.parse import urlparse, quote_plus
+from urllib.parse import urlparse, quote_plus, parse_qs
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 from dotenv import load_dotenv
@@ -29,8 +29,8 @@ except Exception as e:
 # Inicializa a aplicação FastAPI
 app = FastAPI(
     title="Analisador e Otimizador de Produtos Amazon com IA",
-    description="Uma API para extrair dados, analisar inconsistências e otimizar listings.",
-    version="2.6.0", # Versão com prompt de análise numérica
+    description="Uma API para extrair dados de produtos da Amazon, analisar inconsistências e gerar listings otimizados com IA.",
+    version="2.6.1", # Versão com extrator de ASIN aprimorado
 )
 
 # --- Modelos Pydantic ---
@@ -48,82 +48,63 @@ class AnalyzeResponse(BaseModel):
 # ... (outros modelos Pydantic não precisam de alteração) ...
 
 # --- Agentes de Extração de Dados ---
-# (As funções extract_product_info_from_url, get_product_details, etc. não precisam de alterações)
+
+# <<< CORREÇÃO: Função refatorada para ser mais robusta
 def extract_product_info_from_url(url: str) -> Optional[dict]:
-    # ... (código sem alterações)
-    return {}
+    """Extrai o ASIN e o país de uma URL da Amazon, com múltiplos métodos de verificação."""
+    asin = None
+    
+    # Método 1: Tenta encontrar padrões como /dp/ASIN ou /gp/product/ASIN
+    match = re.search(r"/([dg]p|product)/([A-Z0-9]{10})", url, re.IGNORECASE)
+    if match:
+        asin = match.group(2)
+    else:
+        # Método 2: Tenta encontrar um ASIN solto no caminho da URL
+        match = re.search(r"/([A-Z0-9]{10})(?:[/?]|$)", url, re.IGNORECASE)
+        if match:
+            asin = match.group(1)
+        else:
+            # Método 3 (Fallback): Tenta encontrar o ASIN nos parâmetros da query (ex: ?asin=B09B8MGCTT)
+            try:
+                parsed_url = urlparse(url)
+                query_params = parse_qs(parsed_url.query)
+                if 'asin' in query_params and re.match(r'^[A-Z0-9]{10}$', query_params['asin'][0]):
+                    asin = query_params['asin'][0]
+            except Exception:
+                # Se a extração da query falhar, ignora e continua
+                pass
+
+    # Se nenhum método encontrou um ASIN, retorna None
+    if not asin:
+        return None
+
+    # Extrai o país a partir do hostname
+    hostname = urlparse(url).hostname
+    if not hostname:
+        return None
+
+    country_map = {
+        "amazon.com.br": "BR", "amazon.com": "US", "amazon.co.uk": "GB",
+        "amazon.de": "DE", "amazon.ca": "CA", "amazon.fr": "FR",
+        "amazon.es": "ES", "amazon.it": "IT", "amazon.co.jp": "JP",
+        "amazon.in": "IN", "amazon.com.mx": "MX", "amazon.com.au": "AU",
+    }
+    country = next((country_map[key] for key in country_map if key in hostname), "US")
+    
+    return {"asin": asin, "country": country}
+
 
 def get_product_details(asin: str, country: str) -> dict:
-    # ... (código sem alterações)
+    # ... (código da função sem alterações)
     return {}
 
-
-# --- Agente 3: Analisador de Inconsistências (PROMPT REATORADO) ---
 def analyze_product_with_gemini(product_data: dict, country: str) -> str:
-    if not product_data:
-        return "Não foi possível obter os dados do produto para análise."
+    # ... (código da função sem alterações)
+    return ""
 
-    # <<< CORREÇÃO: Lógica para extrair as dimensões do texto foi restaurada
-    product_dimensions_text = "N/A"
-    if info_table := product_data.get("product_information"):
-        for key, value in info_table.items():
-            if "dimens" in key.lower():
-                product_dimensions_text = value
-                break
-
-    title = product_data.get("product_title", "N/A")
-    features = "\n- ".join(product_data.get("about_product", []))
-    image_urls = product_data.get("product_photos", [])
-    
-    if not image_urls:
-        return "Produto sem imagens para análise."
-
-    # <<< CORREÇÃO: Prompt refatorado para ser mais direto e focado em números
-    prompt_parts = [
-        "Você é um analista de QA de e-commerce extremamente meticuloso e com foco em dados numéricos.",
-        "Sua tarefa é comparar os DADOS TEXTUAIS de um produto com as IMAGENS NUMERADAS para encontrar contradições factuais, especialmente em dimensões.",
-        "Siga estes passos:",
-        "1. Primeiro, analise CADA imagem e extraia todas as especificações numéricas visíveis (altura, largura, profundidade, peso, etc.).",
-        "2. Segundo, compare os números extraídos das imagens com os dados fornecidos na seção 'DADOS TEXTUAIS'.",
-        "3. Terceiro, se encontrar uma contradição numérica, descreva-a de forma clara e objetiva, mencionando os valores exatos do texto e da imagem.",
-        "4. É OBRIGATÓRIO citar o número da imagem onde a inconsistência foi encontrada (ex: 'Na Imagem 2...').",
-        "Se tudo estiver consistente, declare: 'Nenhuma inconsistência factual encontrada.'",
-        
-        "\n--- DADOS TEXTUAIS DO PRODUTO ---",
-        f"**Título:** {title}",
-        f"**Destaques:**\n- {features}",
-        f"**Dimensões do Produto (texto):** {product_dimensions_text}", # Linha crucial que foi restaurada
-        
-        "\n--- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---",
-    ]
-    
-    image_count = 0
-    for url in image_urls[:5]:
-        try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            img = Image.open(io.BytesIO(response.content))
-            prompt_parts.append(f"--- Imagem {image_count + 1} ---")
-            prompt_parts.append(img)
-            image_count += 1
-        except Exception as e:
-            print(f"Aviso: Falha ao processar a imagem {url}. Erro: {e}")
-            
-    if image_count == 0:
-        return "Nenhuma imagem pôde ser baixada para análise."
-        
-    try:
-        # Recomendo usar o modelo Pro para tarefas que exigem extração e comparação numérica precisa
-        model = genai.GenerativeModel("gemini-1.5-pro-latest") 
-        response = model.generate_content(prompt_parts)
-        return response.text
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao chamar a API do Gemini para análise: {e}")
-
-# ... (Restante do código, incluindo get_product_reviews, get_competitors, optimize_listing_with_gemini e os endpoints /analyze e /optimize não precisam de alterações) ...
+# ... (Restante do seu código `main.py`, sem alterações) ...
 @app.post("/analyze", response_model=AnalyzeResponse)
 def run_analysis_pipeline(request: AnalyzeRequest):
-    # ... (código sem alterações)
     url_info = extract_product_info_from_url(str(request.amazon_url))
     if not url_info:
         raise HTTPException(status_code=400, detail="URL inválida ou ASIN não encontrado.")
