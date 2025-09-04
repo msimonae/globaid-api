@@ -30,7 +30,7 @@ except Exception as e:
 app = FastAPI(
     title="Analisador e Otimizador de Produtos Amazon com IA",
     description="Uma API para extrair dados, analisar inconsistências e otimizar listings.",
-    version="2.3.0",
+    version="2.3.1",
 )
 
 # --- Modelos Pydantic ---
@@ -44,6 +44,7 @@ class AnalyzeResponse(BaseModel):
     product_title: Optional[str] = None
     product_image_url: Optional[str] = None
     product_photos: Optional[List[str]] = []
+    product_description: Optional[str] = None # <<< ADIÇÃO 1/2
 
 class OptimizeRequest(BaseModel):
     amazon_url: HttpUrl
@@ -89,16 +90,13 @@ def get_product_details(asin: str, country: str) -> dict:
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=503, detail=f"Erro ao chamar a API da Amazon para detalhes: {e}")
 
-def get_product_reviews(asin: str, country: str) -> dict:
-    # ... (código da função sem alterações)
-    return {}
+# (As funções get_product_reviews e get_competitors não são usadas pelo /analyze, então podem ficar como estão)
+def get_product_reviews(asin: str, country: str) -> dict: return {}
+def get_competitors(keyword: str, country: str, original_asin: str) -> list: return []
 
-def get_competitors(keyword: str, country: str, original_asin: str) -> list:
-    # ... (código da função sem alterações)
-    return []
-
-# --- Agente 3: Analisador de Inconsistências (FUNÇÃO ATUALIZADA COM SEU PROMPT) ---
-def analyze_product_with_gemini(product_data: dict, country: str) -> str: # Adicionado 'country' para manter a assinatura
+# --- Agente 3: Analisador de Inconsistências (PROMPT ORIGINAL MANTIDO) ---
+def analyze_product_with_gemini(product_data: dict, country: str) -> str:
+    # Esta função permanece exatamente como você a definiu.
     if not product_data:
         return "Não foi possível obter os dados do produto para análise."
     product_dimensions_text = "N/A"
@@ -124,7 +122,7 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str: # Adic
         "\n--- IMAGENS PARA ANÁLISE VISUAL ---",
     ]
     image_count = 0
-    for url in image_urls[:5]: # Limita a análise a 5 imagens para performance
+    for url in image_urls[:5]:
         try:
             response = requests.get(url, timeout=10)
             response.raise_for_status()
@@ -147,9 +145,7 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str: # Adic
 
 # --- Agente 4: Otimizador de Listing com Gemini ---
 def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competitors_data: list, url_info: dict) -> str:
-    # ... (código da função sem alterações)
     return "Relatório de otimização."
-
 
 # --- Endpoints da API ---
 @app.post("/analyze", response_model=AnalyzeResponse)
@@ -159,7 +155,6 @@ def run_analysis_pipeline(request: AnalyzeRequest):
         raise HTTPException(status_code=400, detail="URL inválida ou ASIN não encontrado.")
 
     product_data = get_product_details(url_info["asin"], url_info["country"])
-    # Passa o 'country' para a função, mesmo que o prompt novo não o utilize diretamente, para manter a consistência
     analysis_report = analyze_product_with_gemini(product_data, url_info["country"])
 
     return AnalyzeResponse(
@@ -168,10 +163,10 @@ def run_analysis_pipeline(request: AnalyzeRequest):
         country=url_info["country"],
         product_title=product_data.get("product_title"),
         product_image_url=product_data.get("product_main_image_url"),
-        product_photos=product_data.get("product_photos", [])
+        product_photos=product_data.get("product_photos", []),
+        product_description=product_data.get("product_description") # <<< ADIÇÃO 2/2
     )
 
 @app.post("/optimize", response_model=OptimizeResponse)
 def run_optimization_pipeline(request: OptimizeRequest):
-    # ... (código do endpoint sem alterações)
-    return OptimizeResponse(optimized_listing_report="...", asin="...", country="...")
+    return OptimizeResponse(optimized_listing_report="Função de otimização em desenvolvimento.", asin="N/A", country="N/A")
