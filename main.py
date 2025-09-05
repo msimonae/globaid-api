@@ -44,7 +44,9 @@ class AnalyzeResponse(BaseModel):
     product_title: Optional[str] = None
     product_image_url: Optional[str] = None
     product_photos: Optional[List[str]] = []
-
+    # <<< NOVO EM VERSÃO ANTERIOR: Adicionado para o PDF
+    product_features: Optional[List[str]] = []
+    
 class OptimizeRequest(BaseModel):
     amazon_url: HttpUrl
 
@@ -98,33 +100,56 @@ def get_competitors(keyword: str, country: str, original_asin: str) -> list:
     return []
 
 # --- Agente 3: Analisador de Inconsistências (FUNÇÃO ATUALIZADA COM SEU PROMPT) ---
-def analyze_product_with_gemini(product_data: dict, country: str) -> str: # Adicionado 'country' para manter a assinatura
+def analyze_product_with_gemini(product_data: dict, country: str) -> str:
     if not product_data:
         return "Não foi possível obter os dados do produto para análise."
-    product_dimensions_text = "N/A"
-    if info_table := product_data.get("product_information"):
-        for key, value in info_table.items():
-            if "dimens" in key.lower():
-                product_dimensions_text = value
-                break
+
+    # Extração de dados (incluindo os novos campos)
     title = product_data.get("product_title", "N/A")
     features = "\n- ".join(product_data.get("about_product", []))
     image_urls = product_data.get("product_photos", [])
+    
+    # <<< NOVO: Extração dos campos adicionais
+    product_description = product_data.get("product_description", "Nenhuma descrição longa fornecida.")
+    
+    # Formata os dicionários 'product_information' e 'product_details' para texto legível
+    product_information = product_data.get("product_information", {})
+    info_formatted = "\n".join([f"- {key}: {value}" for key, value in product_information.items()]) if product_information else "N/A"
+
+    product_details = product_data.get("product_details", {})
+    details_formatted = "\n".join([f"- {key}: {value}" for key, value in product_details.items()]) if product_details else "N/A"
+
+    # A extração de 'product_dimensions_text' já estava sendo feita a partir de 'product_information'
+    product_dimensions_text = "N/A"
+    if product_information:
+        for key, value in product_information.items():
+            if "dimens" in key.lower():
+                product_dimensions_text = value
+                break
+
     if not image_urls:
         return "Produto sem imagens para análise."
+
+    # <<< CORREÇÃO: Prompt atualizado para incluir os novos campos
     prompt_parts = [
         "Você é um analista de controle de qualidade de e-commerce extremamente meticuloso e detalhista.",
         "Sua principal tarefa é encontrar inconsistências factuais entre a descrição textual de um produto e suas imagens.",
-        "Analise o texto e as imagens a seguir. Aponte QUALQUER discrepância, por menor que seja, entre o que está escrito e o que é mostrado. Preste atenção especial aos dados estruturados, como dimensões, peso, voltagem, cor, material e quantidade de itens.",
+        "Analise o texto e as imagens a seguir. Aponte QUALQUER discrepância, por menor que seja, entre o que está escrito e o que é mostrado. Preste atenção especial aos dados estruturados, como dimensões, peso, voltagem, cor, material e quantidade de itens, comparando todas as fontes de texto com as imagens.",
         "Se tudo estiver consistente, declare: 'Nenhuma inconsistência encontrada.'",
+        
         "\n--- DADOS TEXTUAIS DO PRODUTO ---",
         f"**Título:** {title}",
         f"**Destaques (Sobre este item):**\n- {features}",
-        f"**Dimensões do Produto (extraído da tabela de especificações):** {product_dimensions_text}",
+        f"**Descrição Longa do Produto:**\n{product_description}",
+        f"**Dimensões (extraído da tabela):** {product_dimensions_text}",
+        f"**Tabela 'Informação do produto':**\n{info_formatted}",
+        f"**Tabela 'Detalhes do produto':**\n{details_formatted}",
+        
         "\n--- IMAGENS PARA ANÁLISE VISUAL ---",
     ]
+    
     image_count = 0
-    for url in image_urls[:5]: # Limita a análise a 5 imagens para performance
+    for url in image_urls[:5]:
         try:
             response = requests.get(url, timeout=10)
             response.raise_for_status()
@@ -135,15 +160,16 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str: # Adic
             print(f"Aviso: Falha ao baixar a imagem {url}. Erro: {e}")
         except Exception as e:
             print(f"Aviso: Falha ao processar a imagem {url}. Erro: {e}")
+            
     if image_count == 0:
         return "Nenhuma imagem pôde ser baixada para análise."
+        
     try:
         model = genai.GenerativeModel("gemini-1.5-flash-latest")
         response = model.generate_content(prompt_parts)
         return response.text
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao chamar a API do Gemini para análise: {e}")
-
 
 # --- Agente 4: Otimizador de Listing com Gemini ---
 def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competitors_data: list, url_info: dict) -> str:
@@ -175,3 +201,4 @@ def run_analysis_pipeline(request: AnalyzeRequest):
 def run_optimization_pipeline(request: OptimizeRequest):
     # ... (código do endpoint sem alterações)
     return OptimizeResponse(optimized_listing_report="...", asin="...", country="...")
+
