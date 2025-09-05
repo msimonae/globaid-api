@@ -4,7 +4,7 @@ import re
 import io
 import requests
 import google.generativeai as genai
-from urllib.parse import urlparse, quote_plus
+from urllib.parse import urlparse, quote_plus, parse_qs
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 from dotenv import load_dotenv
@@ -30,10 +30,10 @@ except Exception as e:
 app = FastAPI(
     title="Analisador e Otimizador de Produtos Amazon com IA",
     description="Uma API para extrair dados, analisar inconsistências e otimizar listings.",
-    version="2.3.1",
+    version="2.7.0", # Versão com features no response
 )
 
-# --- Modelos Pydantic ---
+# --- Modelos Pydantic (CORRIGIDO) ---
 class AnalyzeRequest(BaseModel):
     amazon_url: HttpUrl
 
@@ -44,7 +44,7 @@ class AnalyzeResponse(BaseModel):
     product_title: Optional[str] = None
     product_image_url: Optional[str] = None
     product_photos: Optional[List[str]] = []
-    product_description: Optional[str] = None # <<< ADIÇÃO 1/2
+    product_features: Optional[List[str]] = [] # <<< NOVO: Campo para as descrições
 
 class OptimizeRequest(BaseModel):
     amazon_url: HttpUrl
@@ -164,9 +164,9 @@ def run_analysis_pipeline(request: AnalyzeRequest):
         product_title=product_data.get("product_title"),
         product_image_url=product_data.get("product_main_image_url"),
         product_photos=product_data.get("product_photos", []),
-        product_description=product_data.get("product_description") # <<< ADIÇÃO 2/2
+        product_features=product_data.get("about_product", []) # <<< NOVO: Retorna as descrições
     )
-
 @app.post("/optimize", response_model=OptimizeResponse)
 def run_optimization_pipeline(request: OptimizeRequest):
     return OptimizeResponse(optimized_listing_report="Função de otimização em desenvolvimento.", asin="N/A", country="N/A")
+
