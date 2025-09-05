@@ -156,8 +156,8 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
             img = Image.open(io.BytesIO(response.content))
             prompt_parts.append(img)
             image_count += 1
-        except requests.exceptions.RequestException as e:
-            print(f"Aviso: Falha ao baixar a imagem {url}. Erro: {e}")
+ #       except requests.exceptions.RequestException as e:
+ #           print(f"Aviso: Falha ao baixar a imagem {url}. Erro: {e}")
         except Exception as e:
             print(f"Aviso: Falha ao processar a imagem {url}. Erro: {e}")
             
@@ -194,11 +194,13 @@ def run_analysis_pipeline(request: AnalyzeRequest):
         country=url_info["country"],
         product_title=product_data.get("product_title"),
         product_image_url=product_data.get("product_main_image_url"),
-        product_photos=product_data.get("product_photos", [])
+        product_photos=product_data.get("product_photos", []),
+        product_features=product_data.get("about_product", [])
     )
 
 @app.post("/optimize", response_model=OptimizeResponse)
 def run_optimization_pipeline(request: OptimizeRequest):
     # ... (código do endpoint sem alterações)
     return OptimizeResponse(optimized_listing_report="...", asin="...", country="...")
+
 
