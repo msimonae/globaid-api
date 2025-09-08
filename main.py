@@ -30,7 +30,7 @@ except Exception as e:
 app = FastAPI(
     title="Analisador e Otimizador de Produtos Amazon com IA",
     description="Uma API para extrair dados, analisar inconsistências e otimizar listings.",
-    version="3.0.0",
+    version="2.0.0",
 )
 
 # --- Modelos Pydantic ---
@@ -46,7 +46,14 @@ class AnalyzeResponse(BaseModel):
     product_photos: Optional[List[str]] = []
     # <<< NOVO EM VERSÃO ANTERIOR: Adicionado para o PDF
     product_features: Optional[List[str]] = []
-    
+
+# <<< NOVO: Modelos para a funcionalidade de lote
+class BatchAnalyzeRequest(BaseModel):
+    amazon_urls: List[HttpUrl]
+
+class BatchAnalyzeResponse(BaseModel):
+    results: List[AnalyzeResponse]
+
 class OptimizeRequest(BaseModel):
     amazon_url: HttpUrl
 
@@ -220,6 +227,38 @@ def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competi
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao chamar a API do Gemini para otimização: {e}")
 
+# <<< NOVO: Função refatorada para processar uma única URL (evita duplicação de código)
+def process_single_url(url: str) -> AnalyzeResponse:
+    """Contém a lógica completa de análise para uma única URL."""
+    url_info = extract_product_info_from_url(url)
+    if not url_info:
+        # Em um cenário de lote, em vez de lançar exceção, retornamos um relatório de erro
+        return AnalyzeResponse(
+            report=f"Erro: URL inválida ou ASIN não encontrado na URL fornecida.",
+            asin="ERRO", country="N/A", product_title=f"Falha ao processar URL: {url}"
+        )
+
+    try:
+        product_data = get_product_details(url_info["asin"], url_info["country"])
+        analysis_report = analyze_product_with_gemini(product_data, url_info["country"])
+
+        return AnalyzeResponse(
+            report=analysis_report,
+            asin=url_info["asin"],
+            country=url_info["country"],
+            product_title=product_data.get("product_title"),
+            product_image_url=product_data.get("product_main_image_url"),
+            product_photos=product_data.get("product_photos", []),
+            product_features=product_data.get("about_product", [])
+        )
+    except Exception as e:
+        return AnalyzeResponse(
+            report=f"Erro ao processar o produto com ASIN {url_info.get('asin', 'N/A')}: {str(e)}",
+            asin=url_info.get('asin', 'ERRO'),
+            country=url_info.get('country', 'N/A'),
+            product_title=f"Falha ao processar URL: {url}"
+        )
+
 
 # --- Endpoints da API ---
 @app.post("/analyze", response_model=AnalyzeResponse)
@@ -242,6 +281,18 @@ def run_analysis_pipeline(request: AnalyzeRequest):
         product_features=product_data.get("about_product", [])
     )
 
+# <<< NOVO: Endpoint para processar uma lista de URLs em lote
+@app.post("/batch_analyze", response_model=BatchAnalyzeResponse)
+def run_batch_analysis_pipeline(request: BatchAnalyzeRequest):
+    """Endpoint para analisar uma lista de URLs em lote."""
+    results = []
+    for url in request.amazon_urls:
+        # Processa cada URL individualmente e adiciona o resultado à lista
+        result = process_single_url(str(url))
+        results.append(result)
+    return BatchAnalyzeResponse(results=results)
+
+
 @app.post("/optimize", response_model=OptimizeResponse)
 def run_optimization_pipeline(request: OptimizeRequest):
     url_info = extract_product_info_from_url(str(request.amazon_url))
@@ -262,3 +313,4 @@ def run_optimization_pipeline(request: OptimizeRequest):
         asin=asin,
         country=country
     )
+
