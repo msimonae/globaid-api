@@ -4,7 +4,7 @@ import re
 import io
 import requests
 import google.generativeai as genai
-from urllib.parse import urlparse, quote_plus
+from urllib.parse import urlparse, quote_plus, parse_qs
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 from dotenv import load_dotenv
@@ -134,40 +134,27 @@ def get_competitors(keyword: str, country: str, original_asin: str) -> list:
 def analyze_product_with_gemini(product_data: dict, country: str) -> str:
     if not product_data:
         return "Não foi possível obter os dados do produto para análise."
-
-    # Extração de dados (incluindo os novos campos)
     title = product_data.get("product_title", "N/A")
     features = "\n- ".join(product_data.get("about_product", []))
     image_urls = product_data.get("product_photos", [])
-    
-    # <<< NOVO: Extração dos campos adicionais
     product_description = product_data.get("product_description", "Nenhuma descrição longa fornecida.")
-    
-    # Formata os dicionários 'product_information' e 'product_details' para texto legível
     product_information = product_data.get("product_information", {})
     info_formatted = "\n".join([f"- {key}: {value}" for key, value in product_information.items()]) if product_information else "N/A"
-
     product_details = product_data.get("product_details", {})
     details_formatted = "\n".join([f"- {key}: {value}" for key, value in product_details.items()]) if product_details else "N/A"
-
-    # A extração de 'product_dimensions_text' já estava sendo feita a partir de 'product_information'
     product_dimensions_text = "N/A"
     if product_information:
         for key, value in product_information.items():
             if "dimens" in key.lower():
                 product_dimensions_text = value
                 break
-
     if not image_urls:
         return "Produto sem imagens para análise."
-
-    # <<< CORREÇÃO: Prompt atualizado para incluir os novos campos
     prompt_parts = [
         "Você é um analista de controle de qualidade de e-commerce extremamente meticuloso e detalhista.",
         "Sua principal tarefa é encontrar inconsistências factuais entre a descrição textual de um produto e suas imagens.",
         "Analise o texto e as imagens a seguir. Aponte QUALQUER discrepância, por menor que seja, entre o que está escrito e o que é mostrado. Preste atenção especial aos dados estruturados, como dimensões, peso, voltagem, cor, material e quantidade de itens, comparando todas as fontes de texto com as imagens.",
         "Se tudo estiver consistente, declare: 'Nenhuma inconsistência encontrada.'",
-        
         "\n--- DADOS TEXTUAIS DO PRODUTO ---",
         f"**Título:** {title}",
         f"**Destaques (Sobre este item):**\n- {features}",
@@ -175,10 +162,8 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
         f"**Dimensões (extraído da tabela):** {product_dimensions_text}",
         f"**Tabela 'Informação do produto':**\n{info_formatted}",
         f"**Tabela 'Detalhes do produto':**\n{details_formatted}",
-        
         "\n--- IMAGENS PARA ANÁLISE VISUAL ---",
     ]
-    
     image_count = 0
     for url in image_urls[:5]:
         try:
@@ -187,14 +172,10 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
             img = Image.open(io.BytesIO(response.content))
             prompt_parts.append(img)
             image_count += 1
- #       except requests.exceptions.RequestException as e:
- #           print(f"Aviso: Falha ao baixar a imagem {url}. Erro: {e}")
         except Exception as e:
             print(f"Aviso: Falha ao processar a imagem {url}. Erro: {e}")
-            
     if image_count == 0:
         return "Nenhuma imagem pôde ser baixada para análise."
-        
     try:
         model = genai.GenerativeModel("gemini-1.5-flash-latest")
         response = model.generate_content(prompt_parts)
@@ -229,15 +210,14 @@ def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competi
 
 # <<< NOVO: Função refatorada para processar uma única URL (evita duplicação de código)
 def process_single_url(url: str) -> AnalyzeResponse:
-    """Contém a lógica completa de análise para uma única URL."""
+    """Contém a lógica completa de análise para uma única URL, com tratamento de erros."""
     url_info = extract_product_info_from_url(url)
     if not url_info:
-        # Em um cenário de lote, em vez de lançar exceção, retornamos um relatório de erro
+        # Retorna um objeto de resposta com o erro, em vez de lançar exceção
         return AnalyzeResponse(
             report=f"Erro: URL inválida ou ASIN não encontrado na URL fornecida.",
             asin="ERRO", country="N/A", product_title=f"Falha ao processar URL: {url}"
         )
-
     try:
         product_data = get_product_details(url_info["asin"], url_info["country"])
         analysis_report = analyze_product_with_gemini(product_data, url_info["country"])
@@ -252,49 +232,33 @@ def process_single_url(url: str) -> AnalyzeResponse:
             product_features=product_data.get("about_product", [])
         )
     except Exception as e:
+        # Captura outras exceções (ex: da API da Amazon) e retorna um relatório de erro
+        error_detail = getattr(e, 'detail', str(e))
         return AnalyzeResponse(
-            report=f"Erro ao processar o produto com ASIN {url_info.get('asin', 'N/A')}: {str(e)}",
+            report=f"Erro ao processar o produto com ASIN {url_info.get('asin', 'N/A')}: {error_detail}",
             asin=url_info.get('asin', 'ERRO'),
             country=url_info.get('country', 'N/A'),
             product_title=f"Falha ao processar URL: {url}"
         )
 
-
 # --- Endpoints da API ---
 @app.post("/analyze", response_model=AnalyzeResponse)
 def run_analysis_pipeline(request: AnalyzeRequest):
-    """Endpoint para analisar uma única URL."""
-    return process_single_url(str(request.amazon_url))
+    """Endpoint para analisar uma única URL. Sua funcionalidade externa é a mesma."""
+    result = process_single_url(str(request.amazon_url))
+    # Se a função de processo retornar um erro interno, lança uma exceção HTTP para o cliente
+    if result.asin == "ERRO":
+        raise HTTPException(status_code=400, detail=result.report)
+    return result
+
     
-    # url_info = extract_product_info_from_url(str(request.amazon_url))
-    # if not url_info:
-    #     raise HTTPException(status_code=400, detail="URL inválida ou ASIN não encontrado.")
-
-    # product_data = get_product_details(url_info["asin"], url_info["country"])
-    # # Passa o 'country' para a função, mesmo que o prompt novo não o utilize diretamente, para manter a consistência
-    # analysis_report = analyze_product_with_gemini(product_data, url_info["country"])
-
-    # return AnalyzeResponse(
-    #     report=analysis_report,
-    #     asin=url_info["asin"],
-    #     country=url_info["country"],
-    #     product_title=product_data.get("product_title"),
-    #     product_image_url=product_data.get("product_main_image_url"),
-    #     product_photos=product_data.get("product_photos", []),
-    #     product_features=product_data.get("about_product", [])
-    # )
-
 # <<< NOVO: Endpoint para processar uma lista de URLs em lote
 @app.post("/batch_analyze", response_model=BatchAnalyzeResponse)
 def run_batch_analysis_pipeline(request: BatchAnalyzeRequest):
     """Endpoint para analisar uma lista de URLs em lote."""
-    results = []
-    for url in request.amazon_urls:
-        # Processa cada URL individualmente e adiciona o resultado à lista
-        result = process_single_url(str(url))
-        results.append(result)
+    # Processa cada URL individualmente e coleta os resultados (sucesso ou falha)
+    results = [process_single_url(str(url)) for url in request.amazon_urls]
     return BatchAnalyzeResponse(results=results)
-
 
 @app.post("/optimize", response_model=OptimizeResponse)
 def run_optimization_pipeline(request: OptimizeRequest):
@@ -316,5 +280,6 @@ def run_optimization_pipeline(request: OptimizeRequest):
         asin=asin,
         country=country
     )
+
 
 
