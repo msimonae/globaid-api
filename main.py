@@ -62,7 +62,7 @@ class OptimizeResponse(BaseModel):
     asin: str
     country: str
 
-# --- Mapeamento de Mercado ---
+--- Mapeamento de Mercado ---
 MARKET_MAP = {
     "BR": ("Português (Brasil)", "Amazon BR"),
     "US": ("English (US)", "Amazon US"),
@@ -263,23 +263,26 @@ def process_single_url(url: str) -> AnalyzeResponse:
 # --- Endpoints da API ---
 @app.post("/analyze", response_model=AnalyzeResponse)
 def run_analysis_pipeline(request: AnalyzeRequest):
-    url_info = extract_product_info_from_url(str(request.amazon_url))
-    if not url_info:
-        raise HTTPException(status_code=400, detail="URL inválida ou ASIN não encontrado.")
+    """Endpoint para analisar uma única URL."""
+    return process_single_url(str(request.amazon_url))
+    
+    # url_info = extract_product_info_from_url(str(request.amazon_url))
+    # if not url_info:
+    #     raise HTTPException(status_code=400, detail="URL inválida ou ASIN não encontrado.")
 
-    product_data = get_product_details(url_info["asin"], url_info["country"])
-    # Passa o 'country' para a função, mesmo que o prompt novo não o utilize diretamente, para manter a consistência
-    analysis_report = analyze_product_with_gemini(product_data, url_info["country"])
+    # product_data = get_product_details(url_info["asin"], url_info["country"])
+    # # Passa o 'country' para a função, mesmo que o prompt novo não o utilize diretamente, para manter a consistência
+    # analysis_report = analyze_product_with_gemini(product_data, url_info["country"])
 
-    return AnalyzeResponse(
-        report=analysis_report,
-        asin=url_info["asin"],
-        country=url_info["country"],
-        product_title=product_data.get("product_title"),
-        product_image_url=product_data.get("product_main_image_url"),
-        product_photos=product_data.get("product_photos", []),
-        product_features=product_data.get("about_product", [])
-    )
+    # return AnalyzeResponse(
+    #     report=analysis_report,
+    #     asin=url_info["asin"],
+    #     country=url_info["country"],
+    #     product_title=product_data.get("product_title"),
+    #     product_image_url=product_data.get("product_main_image_url"),
+    #     product_photos=product_data.get("product_photos", []),
+    #     product_features=product_data.get("about_product", [])
+    # )
 
 # <<< NOVO: Endpoint para processar uma lista de URLs em lote
 @app.post("/batch_analyze", response_model=BatchAnalyzeResponse)
@@ -313,4 +316,5 @@ def run_optimization_pipeline(request: OptimizeRequest):
         asin=asin,
         country=country
     )
+
 
