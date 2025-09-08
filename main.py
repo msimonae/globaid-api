@@ -72,16 +72,28 @@ MARKET_MAP = {
 
 # --- Agentes de Extração de Dados ---
 def extract_product_info_from_url(url: str) -> Optional[dict]:
-    asin_match = re.search(r"/([dg]p|product)/([A-Z0-9]{10})", url, re.IGNORECASE)
-    if not asin_match:
-        asin_match = re.search(r"/([A-Z0-9]{10})(?:[/?]|$)", url, re.IGNORECASE)
-        if not asin_match: return None
-        asin = asin_match.group(1)
+    asin = None
+    match = re.search(r"/([dg]p|product)/([A-Z0-9]{10})", url, re.IGNORECASE)
+    if match:
+        asin = match.group(2)
     else:
-        asin = asin_match.group(2)
+        match = re.search(r"/([A-Z0-9]{10})(?:[/?]|$)", url, re.IGNORECASE)
+        if match:
+            asin = match.group(1)
+        else:
+            try:
+                parsed_url = urlparse(url)
+                query_params = parse_qs(parsed_url.query)
+                if 'asin' in query_params and re.match(r'^[A-Z0-9]{10}$', query_params['asin'][0]):
+                    asin = query_params['asin'][0]
+            except Exception:
+                pass
+    if not asin:
+        return None
     hostname = urlparse(url).hostname
-    if not hostname: return None
-    country_map = { "amazon.com.br": "BR", "amazon.com": "US", "amazon.co.uk": "GB", "amazon.de": "DE", "amazon.ca": "CA", "amazon.fr": "FR", "amazon.es": "ES", "amazon.it": "IT", "amazon.co.jp": "JP", "amazon.in": "IN", "amazon.com.mx": "MX", "amazon.com.au": "AU" }
+    if not hostname:
+        return None
+    country_map = {"amazon.com.br": "BR", "amazon.com": "US", "amazon.co.uk": "GB", "amazon.de": "DE", "amazon.ca": "CA", "amazon.fr": "FR", "amazon.es": "ES", "amazon.it": "IT", "amazon.co.jp": "JP", "amazon.in": "IN", "amazon.com.mx": "MX", "amazon.com.au": "AU"}
     country = next((country_map[key] for key in country_map if key in hostname), "US")
     return {"asin": asin, "country": country}
 
@@ -132,37 +144,31 @@ def get_competitors(keyword: str, country: str, original_asin: str) -> list:
         return []
 # --- Agente 3: Analisador de Inconsistências (FUNÇÃO ATUALIZADA COM SEU PROMPT) ---
 def analyze_product_with_gemini(product_data: dict, country: str) -> str:
-    if not product_data:
-        return "Não foi possível obter os dados do produto para análise."
-    title = product_data.get("product_title", "N/A")
-    features = "\n- ".join(product_data.get("about_product", []))
-    image_urls = product_data.get("product_photos", [])
-    product_description = product_data.get("product_description", "Nenhuma descrição longa fornecida.")
-    product_information = product_data.get("product_information", {})
-    info_formatted = "\n".join([f"- {key}: {value}" for key, value in product_information.items()]) if product_information else "N/A"
-    product_details = product_data.get("product_details", {})
-    details_formatted = "\n".join([f"- {key}: {value}" for key, value in product_details.items()]) if product_details else "N/A"
     product_dimensions_text = "N/A"
-    if product_information:
-        for key, value in product_information.items():
+    if info_table := product_data.get("product_information"):
+        for key, value in info_table.items():
             if "dimens" in key.lower():
                 product_dimensions_text = value
                 break
+    title = product_data.get("product_title", "N/A")
+    features = "\n- ".join(product_data.get("about_product", []))
+    image_urls = product_data.get("product_photos", [])
     if not image_urls:
         return "Produto sem imagens para análise."
     prompt_parts = [
-        "Você é um analista de controle de qualidade de e-commerce extremamente meticuloso e detalhista.",
-        "Sua principal tarefa é encontrar inconsistências factuais entre a descrição textual de um produto e suas imagens.",
-        "Analise o texto e as imagens a seguir. Aponte QUALQUER discrepância, por menor que seja, entre o que está escrito e o que é mostrado. Preste atenção especial aos dados estruturados, como dimensões, peso, voltagem, cor, material e quantidade de itens, comparando todas as fontes de texto com as imagens.",
-        "Se tudo estiver consistente, declare: 'Nenhuma inconsistência encontrada.'",
+        "Você é um analista de QA de e-commerce extremamente meticuloso e com foco em dados numéricos.",
+        "Sua tarefa é comparar os DADOS TEXTUAIS de um produto com as IMAGENS NUMERADAS para encontrar contradições factuais, especialmente em dimensões.",
+        "Siga estes passos:",
+        "1. Primeiro, analise CADA imagem e extraia todas as especificações numéricas visíveis (altura, largura, profundidade, peso, etc.).",
+        "2. Segundo, compare os números extraídos das imagens com os dados fornecidos na seção 'DADOS TEXTUAIS'.",
+        "3. Terceiro, se encontrar uma contradição numérica, descreva-a de forma clara e objetiva, mencionando os valores exatos do texto e da imagem.",
+        "4. É OBRIGATÓRIO citar o número da imagem onde a inconsistência foi encontrada (ex: 'Na Imagem 2...').",
+        "Se tudo estiver consistente, declare: 'Nenhuma inconsistência factual encontrada.'",
         "\n--- DADOS TEXTUAIS DO PRODUTO ---",
         f"**Título:** {title}",
-        f"**Destaques (Sobre este item):**\n- {features}",
-        f"**Descrição Longa do Produto:**\n{product_description}",
-        f"**Dimensões (extraído da tabela):** {product_dimensions_text}",
-        f"**Tabela 'Informação do produto':**\n{info_formatted}",
-        f"**Tabela 'Detalhes do produto':**\n{details_formatted}",
-        "\n--- IMAGENS PARA ANÁLISE VISUAL ---",
+        f"**Destaques:**\n- {features}",
+        f"**Dimensões do Produto (texto):** {product_dimensions_text}",
+        "\n--- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---",
     ]
     image_count = 0
     for url in image_urls[:5]:
@@ -170,6 +176,7 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             img = Image.open(io.BytesIO(response.content))
+            prompt_parts.append(f"--- Imagem {image_count + 1} ---")
             prompt_parts.append(img)
             image_count += 1
         except Exception as e:
@@ -177,7 +184,7 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
     if image_count == 0:
         return "Nenhuma imagem pôde ser baixada para análise."
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash-latest")
+        model = genai.GenerativeModel("gemini-1.5-pro-latest")
         response = model.generate_content(prompt_parts)
         return response.text
     except Exception as e:
@@ -210,18 +217,17 @@ def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competi
 
 # <<< NOVO: Função refatorada para processar uma única URL (evita duplicação de código)
 def process_single_url(url: str) -> AnalyzeResponse:
-    """Contém a lógica completa de análise para uma única URL, com tratamento de erros."""
+    """Contém a lógica completa de análise para uma única URL."""
     url_info = extract_product_info_from_url(url)
     if not url_info:
-        # Retorna um objeto de resposta com o erro, em vez de lançar exceção
         return AnalyzeResponse(
             report=f"Erro: URL inválida ou ASIN não encontrado na URL fornecida.",
-            asin="ERRO", country="N/A", product_title=f"Falha ao processar URL: {url}"
+            asin="ERRO", country="N/A", product_title=f"Falha ao processar URL: {url}",
+            product_photos=[], product_features=[]
         )
     try:
         product_data = get_product_details(url_info["asin"], url_info["country"])
         analysis_report = analyze_product_with_gemini(product_data, url_info["country"])
-
         return AnalyzeResponse(
             report=analysis_report,
             asin=url_info["asin"],
@@ -232,31 +238,26 @@ def process_single_url(url: str) -> AnalyzeResponse:
             product_features=product_data.get("about_product", [])
         )
     except Exception as e:
-        # Captura outras exceções (ex: da API da Amazon) e retorna um relatório de erro
         error_detail = getattr(e, 'detail', str(e))
         return AnalyzeResponse(
             report=f"Erro ao processar o produto com ASIN {url_info.get('asin', 'N/A')}: {error_detail}",
             asin=url_info.get('asin', 'ERRO'),
             country=url_info.get('country', 'N/A'),
-            product_title=f"Falha ao processar URL: {url}"
+            product_title=f"Falha ao processar URL: {url}",
+            product_photos=[], product_features=[]
         )
-
+    
 # --- Endpoints da API ---
 @app.post("/analyze", response_model=AnalyzeResponse)
 def run_analysis_pipeline(request: AnalyzeRequest):
-    """Endpoint para analisar uma única URL. Sua funcionalidade externa é a mesma."""
     result = process_single_url(str(request.amazon_url))
-    # Se a função de processo retornar um erro interno, lança uma exceção HTTP para o cliente
     if result.asin == "ERRO":
         raise HTTPException(status_code=400, detail=result.report)
     return result
-
     
 # <<< NOVO: Endpoint para processar uma lista de URLs em lote
 @app.post("/batch_analyze", response_model=BatchAnalyzeResponse)
 def run_batch_analysis_pipeline(request: BatchAnalyzeRequest):
-    """Endpoint para analisar uma lista de URLs em lote."""
-    # Processa cada URL individualmente e coleta os resultados (sucesso ou falha)
     results = [process_single_url(str(url)) for url in request.amazon_urls]
     return BatchAnalyzeResponse(results=results)
 
@@ -280,6 +281,7 @@ def run_optimization_pipeline(request: OptimizeRequest):
         asin=asin,
         country=country
     )
+
 
 
 
