@@ -30,7 +30,7 @@ except Exception as e:
 app = FastAPI(
     title="Analisador e Otimizador de Produtos Amazon com IA",
     description="Uma API para extrair dados, analisar inconsistências e otimizar listings.",
-    version="2.0.0",
+    version="4.0.0",
 )
 
 # --- Modelos Pydantic ---
@@ -44,16 +44,14 @@ class AnalyzeResponse(BaseModel):
     product_title: Optional[str] = None
     product_image_url: Optional[str] = None
     product_photos: Optional[List[str]] = []
-    # <<< NOVO EM VERSÃO ANTERIOR: Adicionado para o PDF
     product_features: Optional[List[str]] = []
 
-# <<< NOVO: Modelos para a funcionalidade de lote
 class BatchAnalyzeRequest(BaseModel):
     amazon_urls: List[HttpUrl]
 
 class BatchAnalyzeResponse(BaseModel):
     results: List[AnalyzeResponse]
-
+    
 class OptimizeRequest(BaseModel):
     amazon_url: HttpUrl
 
@@ -62,14 +60,13 @@ class OptimizeResponse(BaseModel):
     asin: str
     country: str
 
---- Mapeamento de Mercado ---
+# --- Mapeamento de Mercado ---
 MARKET_MAP = {
     "BR": ("Português (Brasil)", "Amazon BR"),
     "US": ("English (US)", "Amazon US"),
     "MX": ("Español (México)", "Amazon MX"),
     "ES": ("Español (España)", "Amazon ES"),
 }
-
 # --- Agentes de Extração de Dados ---
 def extract_product_info_from_url(url: str) -> Optional[dict]:
     asin = None
@@ -281,6 +278,7 @@ def run_optimization_pipeline(request: OptimizeRequest):
         asin=asin,
         country=country
     )
+
 
 
 
