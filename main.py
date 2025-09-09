@@ -255,8 +255,18 @@ def run_analysis_pipeline(request: AnalyzeRequest):
 # <<< NOVO: Endpoint para processar uma lista de URLs em lote
 @app.post("/batch_analyze", response_model=BatchAnalyzeResponse)
 def run_batch_analysis_pipeline(request: BatchAnalyzeRequest):
-    results = [process_single_url(str(url)) for url in request.amazon_urls]
-    return BatchAnalyzeResponse(results=results)
+    """Endpoint para analisar uma lista de URLs em lote, agora com tratamento de erro."""
+    try:
+        # Processa cada URL individualmente e coleta os resultados
+        results = [process_single_url(str(url)) for url in request.amazon_urls]
+        return BatchAnalyzeResponse(results=results)
+    except Exception as e:
+        # Se ocorrer um erro inesperado durante o processamento em lote,
+        # retorna um erro 500 com uma mensagem clara.
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ocorreu um erro interno inesperado durante o processamento em lote: {str(e)}"
+        )
 
 @app.post("/optimize", response_model=OptimizeResponse)
 def run_optimization_pipeline(request: OptimizeRequest):
@@ -278,6 +288,7 @@ def run_optimization_pipeline(request: OptimizeRequest):
         asin=asin,
         country=country
     )
+
 
 
 
