@@ -148,22 +148,37 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
                 product_dimensions_text = value
                 break
     title = product_data.get("product_title", "N/A")
-    features = "\n- ".join(product_data.get("about_product", []))
+    #features = "\n- ".join(product_data.get("about_product", []))
+    full_text_content += f"- {product_data['about_product']}\n"
+    full_text_content += f"- {product_data['product_information']}\n"
+    full_text_content += f"- {product_data['product_details']}\n
+    full_text_content += f"\nDescrição: \n{product_data['product_description']}"
+
     image_urls = product_data.get("product_photos", [])
     if not image_urls:
         return "Produto sem imagens para análise."
     prompt_parts = [
         "Você é um analista de QA de e-commerce extremamente meticuloso e com foco em dados numéricos.",
-        "Sua tarefa é comparar os DADOS TEXTUAIS de um produto com as IMAGENS NUMERADAS para encontrar contradições factuais, especialmente em dimensões.",
+        "Priorize a busca por inconsistências em especificações técnicas, recursos, nomes e funcionalidades. Além disso, verifique se existem informações que aparentam ser equivocadas ou erradas a respeito dos produtos.",
+        "Sua tarefa é comparar os DADOS TEXTUAIS de um produto com as IMAGENS NUMERADAS para encontrar contradições factuais, especialmente em dimensões, dados específicos dos produtos.",
         "Siga estes passos:",
         "1. Primeiro, analise CADA imagem e extraia todas as especificações numéricas visíveis (altura, largura, profundidade, peso, etc.).",
         "2. Segundo, compare os números extraídos das imagens com os dados fornecidos na seção 'DADOS TEXTUAIS'.",
         "3. Terceiro, se encontrar uma contradição numérica, descreva-a de forma clara e objetiva, mencionando os valores exatos do texto e da imagem.",
         "4. É OBRIGATÓRIO citar o número da imagem onde a inconsistência foi encontrada (ex: 'Na Imagem 2...').",
+        "5.  Analise e compare os Dados do Listing - Conteúdo textual do anúncio e Dimensões do Produto (texto). Crie um relatório claro e conciso listando TODAS as discrepâncias encontradas.",
+        "Discrepâncias podem ser:
+        - Informações contraditórias (ex: texto diz 'bateria de 10h', imagem mostra 'bateria de 8h').
+        - Recursos mencionados no texto mas não mostrados ou validados nas imagens.
+        - Recursos ou textos importantes visíveis nas imagens mas não mencionados na descrição textual.
+        - Preste muita atenção a detalhes técnicos, como dimensões, peso, material, etc, nas imagens que estejam possivelmente inconsistentes com as informações textuais.
+        - Qualquer erro ou inconsistência que possa afetar a decisão de compra do cliente.
+        - Se houver discrepâncias, forneça uma explicação clara do porquê de cada uma ser considerada uma discrepância.
+        - Agrupe as discrepâncias por tipo, se possível, para facilitar a análise.",
         "Se tudo estiver consistente, declare: 'Nenhuma inconsistência factual encontrada.'",
         "\n--- DADOS TEXTUAIS DO PRODUTO ---",
         f"**Título:** {title}",
-        f"**Destaques:**\n- {features}",
+        f"**Dados do Listing - Conteúdo textual do anúncio:**\n- {full_text_content}",
         f"**Dimensões do Produto (texto):** {product_dimensions_text}",
         "\n--- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---",
     ]
@@ -288,6 +303,7 @@ def run_optimization_pipeline(request: OptimizeRequest):
         asin=asin,
         country=country
     )
+
 
 
 
