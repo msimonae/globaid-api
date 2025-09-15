@@ -147,16 +147,24 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
             if "dimens" in key.lower():
                 product_dimensions_text = value
                 break
+
     title = product_data.get("product_title", "N/A")
-    #features = "\n- ".join(product_data.get("about_product", []))
-    full_text_content += f"- {product_data['about_product']}\n"
-    full_text_content += f"- {product_data['product_information']}\n"
-    full_text_content += f"- {product_data['product_details']}\n
-    full_text_content += f"\nDescrição: \n{product_data['product_description']}"
+
+    # Inicializa a variável antes de concatenar
+    full_text_content = ""
+    if product_data.get("about_product"):
+        full_text_content += f"- {product_data['about_product']}\n"
+    if product_data.get("product_information"):
+        full_text_content += f"- {product_data['product_information']}\n"
+    if product_data.get("product_details"):
+        full_text_content += f"- {product_data['product_details']}\n"
+    if product_data.get("product_description"):
+        full_text_content += f"\nDescrição: \n{product_data['product_description']}\n"
 
     image_urls = product_data.get("product_photos", [])
     if not image_urls:
         return "Produto sem imagens para análise."
+
     prompt_parts = [
         "Você é um analista de QA de e-commerce extremamente meticuloso e com foco em dados numéricos.",
         "Priorize a busca por inconsistências em especificações técnicas, recursos, nomes e funcionalidades. Além disso, verifique se existem informações que aparentam ser equivocadas ou erradas a respeito dos produtos.",
@@ -166,22 +174,23 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
         "2. Segundo, compare os números extraídos das imagens com os dados fornecidos na seção 'DADOS TEXTUAIS'.",
         "3. Terceiro, se encontrar uma contradição numérica, descreva-a de forma clara e objetiva, mencionando os valores exatos do texto e da imagem.",
         "4. É OBRIGATÓRIO citar o número da imagem onde a inconsistência foi encontrada (ex: 'Na Imagem 2...').",
-        "5.  Analise e compare os Dados do Listing - Conteúdo textual do anúncio e Dimensões do Produto (texto). Crie um relatório claro e conciso listando TODAS as discrepâncias encontradas.",
-        "Discrepâncias podem ser:
-        - Informações contraditórias (ex: texto diz 'bateria de 10h', imagem mostra 'bateria de 8h').
-        - Recursos mencionados no texto mas não mostrados ou validados nas imagens.
-        - Recursos ou textos importantes visíveis nas imagens mas não mencionados na descrição textual.
-        - Preste muita atenção a detalhes técnicos, como dimensões, peso, material, etc, nas imagens que estejam possivelmente inconsistentes com as informações textuais.
-        - Qualquer erro ou inconsistência que possa afetar a decisão de compra do cliente.
-        - Se houver discrepâncias, forneça uma explicação clara do porquê de cada uma ser considerada uma discrepância.
-        - Agrupe as discrepâncias por tipo, se possível, para facilitar a análise.",
+        "5. Analise e compare os Dados do Listing - Conteúdo textual do anúncio e Dimensões do Produto (texto). Crie um relatório claro e conciso listando TODAS as discrepâncias encontradas.",
+        "Discrepâncias podem ser:\n"
+        "- Informações contraditórias (ex: texto diz 'bateria de 10h', imagem mostra 'bateria de 8h').\n"
+        "- Recursos mencionados no texto mas não mostrados ou validados nas imagens.\n"
+        "- Recursos ou textos importantes visíveis nas imagens mas não mencionados na descrição textual.\n"
+        "- Preste muita atenção a detalhes técnicos, como dimensões, peso, material, etc, nas imagens que estejam possivelmente inconsistentes com as informações textuais.\n"
+        "- Qualquer erro ou inconsistência que possa afetar a decisão de compra do cliente.\n"
+        "- Se houver discrepâncias, forneça uma explicação clara do porquê de cada uma ser considerada uma discrepância.\n"
+        "- Agrupe as discrepâncias por tipo, se possível, para facilitar a análise.",
         "Se tudo estiver consistente, declare: 'Nenhuma inconsistência factual encontrada.'",
         "\n--- DADOS TEXTUAIS DO PRODUTO ---",
         f"**Título:** {title}",
-        f"**Dados do Listing - Conteúdo textual do anúncio:**\n- {full_text_content}",
+        f"**Dados do Listing - Conteúdo textual do anúncio:**\n{full_text_content}",
         f"**Dimensões do Produto (texto):** {product_dimensions_text}",
         "\n--- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---",
     ]
+
     image_count = 0
     for url in image_urls[:5]:
         try:
@@ -193,8 +202,10 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
             image_count += 1
         except Exception as e:
             print(f"Aviso: Falha ao processar a imagem {url}. Erro: {e}")
+
     if image_count == 0:
         return "Nenhuma imagem pôde ser baixada para análise."
+
     try:
         model = genai.GenerativeModel("gemini-1.5-pro-latest")
         response = model.generate_content(prompt_parts)
@@ -303,6 +314,7 @@ def run_optimization_pipeline(request: OptimizeRequest):
         asin=asin,
         country=country
     )
+
 
 
 
