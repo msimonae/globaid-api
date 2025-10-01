@@ -22,7 +22,11 @@ if not RAPIDAPI_KEY or not GEMINI_API_KEY:
     raise RuntimeError("🚨 ALERTA: Chaves de API não encontradas.")
 
 try:
-    genai.configure(api_key=GEMINI_API_KEY)
+    ### CORREÇÃO ###
+    # Configura a API do Gemini explicitamente para usar a versão 'v1'
+    # Esta versão suporta os modelos mais recentes como o gemini-1.5-pro-latest
+    genai.configure(api_key=GEMINI_API_KEY, client_options={"api_version": "v1"})
+    print("✅ API do Gemini configurada com sucesso.")
 except Exception as e:
     raise RuntimeError(f"🚨 ALERTA: Falha ao configurar a API do Gemini. Erro: {e}")
 
@@ -67,6 +71,7 @@ MARKET_MAP = {
     "MX": ("Español (México)", "Amazon MX"),
     "ES": ("Español (España)", "Amazon ES"),
 }
+
 # --- Agentes de Extração de Dados ---
 def extract_product_info_from_url(url: str) -> Optional[dict]:
     asin = None
@@ -139,6 +144,7 @@ def get_competitors(keyword: str, country: str, original_asin: str) -> list:
         return competitors
     except requests.exceptions.RequestException:
         return []
+
 # --- Agente 3: Analisador de Inconsistências (FUNÇÃO ATUALIZADA COM SEU PROMPT) ---
 def analyze_product_with_gemini(product_data: dict, country: str) -> str:
     product_dimensions_text = "N/A"
@@ -150,7 +156,6 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
 
     title = product_data.get("product_title", "N/A")
 
-    # Inicializa a variável antes de concatenar
     full_text_content = ""
     if product_data.get("about_product"):
         full_text_content += f"- {product_data['about_product']}\n"
@@ -207,6 +212,8 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
         return "Nenhuma imagem pôde ser baixada para análise."
 
     try:
+        ### CORREÇÃO ###
+        # Certifique-se de usar o modelo correto após a configuração
         model = genai.GenerativeModel("gemini-1.5-pro-latest")
         response = model.generate_content(prompt_parts)
         return response.text
@@ -283,12 +290,9 @@ def run_analysis_pipeline(request: AnalyzeRequest):
 def run_batch_analysis_pipeline(request: BatchAnalyzeRequest):
     """Endpoint para analisar uma lista de URLs em lote, agora com tratamento de erro."""
     try:
-        # Processa cada URL individualmente e coleta os resultados
         results = [process_single_url(str(url)) for url in request.amazon_urls]
         return BatchAnalyzeResponse(results=results)
     except Exception as e:
-        # Se ocorrer um erro inesperado durante o processamento em lote,
-        # retorna um erro 500 com uma mensagem clara.
         raise HTTPException(
             status_code=500,
             detail=f"Ocorreu um erro interno inesperado durante o processamento em lote: {str(e)}"
@@ -314,11 +318,3 @@ def run_optimization_pipeline(request: OptimizeRequest):
         asin=asin,
         country=country
     )
-
-
-
-
-
-
-
-
