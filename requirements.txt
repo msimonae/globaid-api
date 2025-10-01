@@ -1,7 +1,7 @@
 fastapi
 uvicorn[standard]
 requests
-google-generativeai
+google-generativeai>=0.7.1
 python-dotenv
 pydantic
 Pillow
