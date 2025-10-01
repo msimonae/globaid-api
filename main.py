@@ -22,8 +22,10 @@ if not RAPIDAPI_KEY or not GEMINI_API_KEY:
     raise RuntimeError("🚨 ALERTA: Chaves de API não encontradas.")
 
 try:
-    # Mantém a configuração para a API v1 para garantir compatibilidade
-    genai.configure(api_key=GEMINI_API_KEY, client_options={"api_version": "v1"})
+    ### CORREÇÃO ###
+    # Remova a opção client_options para evitar o erro de compatibilidade.
+    # A biblioteca atualizada usa a API v1 por padrão.
+    genai.configure(api_key=GEMINI_API_KEY)
     print("✅ API do Gemini configurada com sucesso.")
 except Exception as e:
     raise RuntimeError(f"🚨 ALERTA: Falha ao configurar a API do Gemini. Erro: {e}")
@@ -210,7 +212,6 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
         return "Nenhuma imagem pôde ser baixada para análise."
 
     try:
-        # Altera o modelo para gemini-1.5-flash-latest
         model = genai.GenerativeModel("gemini-1.5-flash-latest")
         response = model.generate_content(prompt_parts)
         return response.text
@@ -236,7 +237,6 @@ def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competi
         "\n--- REGRAS INQUEBRÁVEIS ---\n- Não invente características. Use apenas os dados fornecidos.\n- Não use clichês genéricos. Seja específico e factual.\n- O conteúdo final deve ser único e superior ao dos concorrentes."
     ]
     try:
-        # Altera o modelo para gemini-1.5-flash-latest
         model = genai.GenerativeModel("gemini-1.5-flash-latest")
         response = model.generate_content("\n".join(prompt))
         return response.text
