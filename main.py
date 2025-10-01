@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 from dotenv import load_dotenv
 from typing import Optional, List
-from PIL import Image # Importação mantida, mas não será usada na análise
+from PIL import Image
 
 # Carrega as variáveis de ambiente
 load_dotenv()
@@ -142,7 +142,7 @@ def get_competitors(keyword: str, country: str, original_asin: str) -> list:
     except requests.exceptions.RequestException:
         return []
 
-# --- Agente 3: Analisador de Inconsistências (FUNÇÃO ADAPTADA PARA GEMINI-PRO) ---
+# --- Agente 3: Analisador de Inconsistências (FUNÇÃO ATUALIZADA COM SEU PROMPT) ---
 def analyze_product_with_gemini(product_data: dict, country: str) -> str:
     product_dimensions_text = "N/A"
     if info_table := product_data.get("product_information"):
@@ -163,16 +163,25 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
     if product_data.get("product_description"):
         full_text_content += f"\nDescrição: \n{product_data['product_description']}\n"
 
-    # Não tenta baixar imagens, já que o gemini-pro não as suporta
+    image_urls = product_data.get("product_photos", [])
+    if not image_urls:
+        return "Produto sem imagens para análise."
+
     prompt_parts = [
         "Você é um analista de QA de e-commerce extremamente meticuloso e com foco em dados numéricos.",
         "Priorize a busca por inconsistências em especificações técnicas, recursos, nomes e funcionalidades. Além disso, verifique se existem informações que aparentam ser equivocadas ou erradas a respeito dos produtos.",
-        "Sua tarefa é comparar os DADOS TEXTUAIS de um produto para encontrar contradições factuais, especialmente em dimensões, dados específicos dos produtos.",
+        "Sua tarefa é comparar os DADOS TEXTUAIS de um produto com as IMAGENS NUMERADAS para encontrar contradições factuais, especialmente em dimensões, dados específicos dos produtos.",
         "Siga estes passos:",
-        "1. Analise o Título, os Dados do Listing, e a Descrição. Encontre contradições e inconsistências.",
-        "2. Crie um relatório claro e conciso listando TODAS as discrepâncias encontradas.",
+        "1. Primeiro, analise CADA imagem e extraia todas as especificações numéricas visíveis (altura, largura, profundidade, peso, etc.).",
+        "2. Segundo, compare os números extraídos das imagens com os dados fornecidos na seção 'DADOS TEXTUAIS'.",
+        "3. Terceiro, se encontrar uma contradição numérica, descreva-a de forma clara e objetiva, mencionando os valores exatos do texto e da imagem.",
+        "4. É OBRIGATÓRIO citar o número da imagem onde a inconsistência foi encontrada (ex: 'Na Imagem 2...').",
+        "5. Analise e compare os Dados do Listing - Conteúdo textual do anúncio e Dimensões do Produto (texto). Crie um relatório claro e conciso listando TODAS as discrepâncias encontradas.",
         "Discrepâncias podem ser:\n"
-        "- Informações contraditórias (ex: texto diz 'bateria de 10h' em uma seção e 'bateria de 8h' em outra).\n"
+        "- Informações contraditórias (ex: texto diz 'bateria de 10h', imagem mostra 'bateria de 8h').\n"
+        "- Recursos mencionados no texto mas não mostrados ou validados nas imagens.\n"
+        "- Recursos ou textos importantes visíveis nas imagens mas não mencionados na descrição textual.\n"
+        "- Preste muita atenção a detalhes técnicos, como dimensões, peso, material, etc, nas imagens que estejam possivelmente inconsistentes com as informações textuais.\n"
         "- Qualquer erro ou inconsistência que possa afetar a decisão de compra do cliente.\n"
         "- Se houver discrepâncias, forneça uma explicação clara do porquê de cada uma ser considerada uma discrepância.\n"
         "- Agrupe as discrepâncias por tipo, se possível, para facilitar a análise.",
@@ -181,11 +190,27 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
         f"**Título:** {title}",
         f"**Dados do Listing - Conteúdo textual do anúncio:**\n{full_text_content}",
         f"**Dimensões do Produto (texto):** {product_dimensions_text}",
+        "\n--- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---",
     ]
 
+    image_count = 0
+    for url in image_urls[:5]:
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            img = Image.open(io.BytesIO(response.content))
+            prompt_parts.append(f"--- Imagem {image_count + 1} ---")
+            prompt_parts.append(img)
+            image_count += 1
+        except Exception as e:
+            print(f"Aviso: Falha ao processar a imagem {url}. Erro: {e}")
+
+    if image_count == 0:
+        return "Nenhuma imagem pôde ser baixada para análise."
+
     try:
-        # Troca o modelo para um modelo de texto estável
-        model = genai.GenerativeModel("gemini-pro")
+        # Tenta usar o modelo `gemini-1.5-flash-latest` que é mais estável
+        model = genai.GenerativeModel("gemini-1.5-flash-latest")
         response = model.generate_content(prompt_parts)
         return response.text
     except Exception as e:
@@ -210,8 +235,8 @@ def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competi
         "\n--- REGRAS INQUEBRÁVEIS ---\n- Não invente características. Use apenas os dados fornecidos.\n- Não use clichês genéricos. Seja específico e factual.\n- O conteúdo final deve ser único e superior ao dos concorrentes."
     ]
     try:
-        # Troca o modelo para um modelo de texto estável
-        model = genai.GenerativeModel("gemini-pro")
+        # Tenta usar o modelo `gemini-1.5-flash-latest` que é mais estável
+        model = genai.GenerativeModel("gemini-1.5-flash-latest")
         response = model.generate_content("\n".join(prompt))
         return response.text
     except Exception as e:
