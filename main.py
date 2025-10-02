@@ -115,6 +115,7 @@ def get_product_details(asin: str, country: str) -> dict:
         raise HTTPException(status_code=503, detail=f"Erro ao chamar a API da Amazon para detalhes. Verifique sua chave RapidAPI e o ASIN: {e}")
 
 def get_product_reviews(asin: str, country: str) -> dict:
+    """Busca os reviews de um produto."""
     api_url = "https://real-time-amazon-data.p.rapidapi.com/product-reviews"
     querystring = {"asin": asin, "country": country, "sort_by": "recent", "page_size": "20"}
     headers = {"x-rapidapi-key": RAPIDAPI_KEY, "x-rapidapi-host": "real-time-amazon-data.p.rapidapi.com"}
@@ -129,6 +130,7 @@ def get_product_reviews(asin: str, country: str) -> dict:
         return {"positive_reviews": [], "negative_reviews": []}
 
 def get_competitors(keyword: str, country: str, original_asin: str) -> list:
+    """Busca produtos na Amazon por palavra-chave para encontrar concorrentes."""
     api_url = "https://real-time-amazon-data.p.rapidapi.com/search"
     querystring = {"query": quote_plus(keyword), "country": country, "page_size":"10"}
     headers = {"x-rapidapi-key": RAPIDAPI_KEY, "x-rapidapi-host": "real-time-amazon-data.p.rapidapi.com"}
@@ -145,7 +147,7 @@ def get_competitors(keyword: str, country: str, original_asin: str) -> list:
     except requests.exceptions.RequestException:
         return []
 
-# --- Agente 3: Analisador de Inconsistências (FUNÇÃO ADAPTADA PARA OPENROUTER) ---
+# --- Agente 3: Analisador de Inconsistências (FUNÇÃO ADAPTADA PARA GPT-4o) ---
 def analyze_product_with_gemini(product_data: dict, country: str) -> str:
     product_dimensions_text = "N/A"
     if info_table := product_data.get("product_information"):
@@ -170,7 +172,7 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
     if not image_urls:
         return "Produto sem imagens para análise."
 
-    system_prompt = "Você é um analista de QA de e-commerce extremamente meticuloso e com foco em dados numéricos. Sua tarefa é comparar os DADOS TEXTUAIS de um produto com as IMAGENS NUMERADAS para encontrar contradições factuais. Crie um relatório claro e conciso listando TODAS as discrepâncias. Se tudo estiver consistente, declare: 'Nenhuma inconsistência factual encontrada.'."
+    system_prompt = "Você é um analista de QA de e-commerce extremamente meticuloso e com foco em dados numéricos. Sua tarefa é comparar os DADOS TEXTUAIS de um produto com as IMAGENS NUMERADAS para encontrar contradições factuais, especialmente em dimensões, dados específicos dos produtos. Crie um relatório claro e conciso listando TODAS as discrepâncias. Se tudo estiver consistente, declare: 'Nenhuma inconsistência factual encontrada.'."
     
     user_content = []
     user_content.append({"type": "text", "text": f"""
@@ -207,7 +209,7 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
 
     try:
         response = client.chat.completions.create(
-            model="google/gemini-1.5-flash-latest",
+            model="openai/gpt-4o",  # Modelo GPT-4o para análise multimodal
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content}
@@ -215,9 +217,9 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
         )
         return response.choices[0].message.content
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao chamar a API do Gemini via OpenRouter para análise: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao chamar a API para análise: {e}")
 
-# --- Agente 4: Otimizador de Listing com Gemini ---
+# --- Agente 4: Otimizador de Listing com GPT-4o ---
 def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competitors_data: list, url_info: dict) -> str:
     lang, market = MARKET_MAP.get(url_info["country"], ("English (US)", f"Amazon {url_info['country']}"))
     
@@ -262,7 +264,7 @@ def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competi
     
     try:
         response = client.chat.completions.create(
-            model="google/gemini-1.5-flash-latest",
+            model="openai/gpt-4o",  # Modelo GPT-4o para otimização
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -270,7 +272,7 @@ def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competi
         )
         return response.choices[0].message.content
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao chamar a API do Gemini via OpenRouter para otimização: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao chamar a API para otimização: {e}")
 
 # <<< NOVO: Função refatorada para processar uma única URL (evita duplicação de código)
 def process_single_url(url: str) -> AnalyzeResponse:
