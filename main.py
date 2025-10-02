@@ -3,7 +3,6 @@ import os
 import re
 import io
 import requests
-import google.generativeai as genai
 from urllib.parse import urlparse, quote_plus, parse_qs
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
@@ -11,21 +10,28 @@ from dotenv import load_dotenv
 from typing import Optional, List
 from PIL import Image
 
+# 1. Instala a biblioteca do OpenAI
+from openai import OpenAI
+
 # Carrega as variáveis de ambiente
 load_dotenv()
 
 # --- Configuração das Chaves de API ---
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-if not RAPIDAPI_KEY or not GEMINI_API_KEY:
+if not RAPIDAPI_KEY or not OPENROUTER_API_KEY:
     raise RuntimeError("🚨 ALERTA: Chaves de API não encontradas.")
 
+# 2. Configura o cliente da API OpenRouter
 try:
-    genai.configure(api_key=GEMINI_API_KEY)
-    print("✅ API do Gemini configurada com sucesso.")
+    client = OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=OPENROUTER_API_KEY,
+    )
+    print("✅ API do OpenRouter configurada com sucesso.")
 except Exception as e:
-    raise RuntimeError(f"🚨 ALERTA: Falha ao configurar a API do Gemini. Erro: {e}")
+    raise RuntimeError(f"🚨 ALERTA: Falha ao configurar a API do OpenRouter. Erro: {e}")
 
 # Inicializa a aplicação FastAPI
 app = FastAPI(
@@ -142,7 +148,7 @@ def get_competitors(keyword: str, country: str, original_asin: str) -> list:
     except requests.exceptions.RequestException:
         return []
 
-# --- Agente 3: Analisador de Inconsistências (FUNÇÃO ATUALIZADA COM SEU PROMPT) ---
+# --- Agente 3: Analisador de Inconsistências (FUNÇÃO ADAPTADA PARA OPENROUTER) ---
 def analyze_product_with_gemini(product_data: dict, country: str) -> str:
     product_dimensions_text = "N/A"
     if info_table := product_data.get("product_information"):
@@ -167,40 +173,44 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
     if not image_urls:
         return "Produto sem imagens para análise."
 
-    prompt_parts = [
-        "Você é um analista de QA de e-commerce extremamente meticuloso e com foco em dados numéricos.",
-        "Priorize a busca por inconsistências em especificações técnicas, recursos, nomes e funcionalidades. Além disso, verifique se existem informações que aparentam ser equivocadas ou erradas a respeito dos produtos.",
-        "Sua tarefa é comparar os DADOS TEXTUAIS de um produto com as IMAGENS NUMERADAS para encontrar contradições factuais, especialmente em dimensões, dados específicos dos produtos.",
-        "Siga estes passos:",
-        "1. Primeiro, analise CADA imagem e extraia todas as especificações numéricas visíveis (altura, largura, profundidade, peso, etc.).",
-        "2. Segundo, compare os números extraídos das imagens com os dados fornecidos na seção 'DADOS TEXTUAIS'.",
-        "3. Terceiro, se encontrar uma contradição numérica, descreva-a de forma clara e objetiva, mencionando os valores exatos do texto e da imagem.",
-        "4. É OBRIGATÓRIO citar o número da imagem onde a inconsistência foi encontrada (ex: 'Na Imagem 2...').",
-        "5. Analise e compare os Dados do Listing - Conteúdo textual do anúncio e Dimensões do Produto (texto). Crie um relatório claro e conciso listando TODAS as discrepâncias encontradas.",
-        "Discrepâncias podem ser:\n"
-        "- Informações contraditórias (ex: texto diz 'bateria de 10h', imagem mostra 'bateria de 8h').\n"
-        "- Recursos mencionados no texto mas não mostrados ou validados nas imagens.\n"
-        "- Recursos ou textos importantes visíveis nas imagens mas não mencionados na descrição textual.\n"
-        "- Preste muita atenção a detalhes técnicos, como dimensões, peso, material, etc, nas imagens que estejam possivelmente inconsistentes com as informações textuais.\n"
-        "- Qualquer erro ou inconsistência que possa afetar a decisão de compra do cliente.\n"
-        "- Se houver discrepâncias, forneça uma explicação clara do porquê de cada uma ser considerada uma discrepância.\n"
-        "- Agrupe as discrepâncias por tipo, se possível, para facilitar a análise.",
-        "Se tudo estiver consistente, declare: 'Nenhuma inconsistência factual encontrada.'",
-        "\n--- DADOS TEXTUAIS DO PRODUTO ---",
-        f"**Título:** {title}",
-        f"**Dados do Listing - Conteúdo textual do anúncio:**\n{full_text_content}",
-        f"**Dimensões do Produto (texto):** {product_dimensions_text}",
-        "\n--- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---",
-    ]
+    # Prepara o prompt de texto para o modelo
+    system_prompt = "Você é um analista de QA de e-commerce extremamente meticuloso e com foco em dados numéricos. Sua tarefa é comparar os DADOS TEXTUAIS de um produto com as IMAGENS NUMERADAS para encontrar contradições factuais, especialmente em dimensões, dados específicos dos produtos. Crie um relatório claro e conciso listando TODAS as discrepâncias. Se tudo estiver consistente, declare: 'Nenhuma inconsistência factual encontrada.'."
+    
+    user_prompt_text = f"""
+    --- DADOS TEXTUAIS DO PRODUTO ---
+    **Título:** {title}
+    **Dados do Listing - Conteúdo textual do anúncio:**
+    {full_text_content}
+    **Dimensões do Produto (texto):** {product_dimensions_text}
+    
+    --- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---
+    """
 
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": []}
+    ]
+    
+    # Adiciona o prompt textual ao conteúdo do usuário
+    messages[1]["content"].append({"type": "text", "text": user_prompt_text})
+
+    # Adiciona as imagens ao conteúdo do usuário
     image_count = 0
     for url in image_urls[:5]:
         try:
+            # Baixa a imagem e a converte para base64
             response = requests.get(url, timeout=10)
             response.raise_for_status()
-            img = Image.open(io.BytesIO(response.content))
-            prompt_parts.append(f"--- Imagem {image_count + 1} ---")
-            prompt_parts.append(img)
+            image_b64 = f"data:{response.headers['Content-Type']};base64,{io.BytesIO(response.content).read().hex()}" # OpenAI-compatible format
+            
+            messages[1]["content"].append({
+                "type": "image_url",
+                "image_url": {"url": image_b64}
+            })
+            messages[1]["content"].append({
+                "type": "text",
+                "text": f"--- Imagem {image_count + 1} ---"
+            })
             image_count += 1
         except Exception as e:
             print(f"Aviso: Falha ao processar a imagem {url}. Erro: {e}")
@@ -209,38 +219,72 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
         return "Nenhuma imagem pôde ser baixada para análise."
 
     try:
-        # Tenta usar o modelo `gemini-1.5-flash-latest` que é mais estável
-        model = genai.GenerativeModel("gemini-1.5-flash-latest")
-        response = model.generate_content(prompt_parts)
-        return response.text
+        # Chama o modelo através do cliente OpenRouter
+        response = client.chat.completions.create(
+            model="google/gemini-1.5-flash-latest",
+            messages=messages
+        )
+        return response.choices[0].message.content
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao chamar a API do Gemini para análise: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao chamar a API do Gemini via OpenRouter para análise: {e}")
 
 # --- Agente 4: Otimizador de Listing com Gemini ---
 def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competitors_data: list, url_info: dict) -> str:
     lang, market = MARKET_MAP.get(url_info["country"], ("English (US)", f"Amazon {url_info['country']}"))
-    prompt = [
-        f"Você é um Consultor Sênior de E-commerce, mestre em SEO para o ecossistema Amazon (A9, Rufus). Sua missão é otimizar um listing para maximizar vendas no mercado {market}.",
-        f"A resposta DEVE ser inteiramente em {lang}.",
-        f"--- DADOS DO PRODUTO ATUAL ---\nTítulo: {product_data.get('product_title', 'N/A')}\nFeatures: {product_data.get('about_product', [])}",
-        f"--- INTELIGÊNCIA DE MERCADO ---\nReviews Positivos: {reviews_data.get('positive_reviews')}\nReviews Negativos: {reviews_data.get('negative_reviews')}\nConcorrentes: {competitors_data}",
-        "\n--- INSTRUÇÕES E FORMATO DE SAÍDA OBRIGATÓRIO ---",
-        "Gere sua resposta seguindo ESTRITAMENTE a estrutura Markdown abaixo, sem omitir nenhuma seção. Use os títulos exatamente como especificados.",
-        "### 1. Título Otimizado (SEO)\n[Gere aqui o título otimizado]",
-        "### 2. Feature Bullets Otimizados (5 Pontos)\n[Gere aqui os 5 feature bullets, um por linha]",
-        "### 3. Descrição do Produto (Estrutura para A+ Content)\n[Gere aqui a descrição persuasiva]",
-        "### 4. Análise Competitiva e Estratégia\n[Gere aqui a tabela comparativa e o parágrafo de estratégia]",
-        "### 5. Sugestões de Palavras-chave (Backend)\n[Gere aqui a lista de 15-20 palavras-chave long-tail]",
-        "### 6. FAQ Estratégico (Top 5 Perguntas e Respostas)\n[Gere aqui as 5 Q&As]",
-        "\n--- REGRAS INQUEBRÁVEIS ---\n- Não invente características. Use apenas os dados fornecidos.\n- Não use clichês genéricos. Seja específico e factual.\n- O conteúdo final deve ser único e superior ao dos concorrentes."
+    
+    system_prompt = f"Você é um Consultor Sênior de E-commerce, mestre em SEO para o ecossistema Amazon (A9, Rufus). Sua missão é otimizar um listing para maximizar vendas no mercado {market}. A resposta DEVE ser inteiramente em {lang}."
+    
+    user_prompt = f"""
+    --- DADOS DO PRODUTO ATUAL ---
+    Título: {product_data.get('product_title', 'N/A')}
+    Features: {product_data.get('about_product', [])}
+    
+    --- INTELIGÊNCIA DE MERCADO ---
+    Reviews Positivos: {reviews_data.get('positive_reviews')}
+    Reviews Negativos: {reviews_data.get('negative_reviews')}
+    Concorrentes: {competitors_data}
+    
+    --- INSTRUÇÕES E FORMATO DE SAÍDA OBRIGATÓRIO ---
+    Gere sua resposta seguindo ESTRITAMENTE a estrutura Markdown abaixo, sem omitir nenhuma seção. Use os títulos exatamente como especificados.
+    
+    ### 1. Título Otimizado (SEO)
+    [Gere aqui o título otimizado]
+    
+    ### 2. Feature Bullets Otimizados (5 Pontos)
+    [Gere aqui os 5 feature bullets, um por linha]
+    
+    ### 3. Descrição do Produto (Estrutura para A+ Content)
+    [Gere aqui a descrição persuasiva]
+    
+    ### 4. Análise Competitiva e Estratégia
+    [Gere aqui a tabela comparativa e o parágrafo de estratégia]
+    
+    ### 5. Sugestões de Palavras-chave (Backend)
+    [Gere aqui a lista de 15-20 palavras-chave long-tail]
+    
+    ### 6. FAQ Estratégico (Top 5 Perguntas e Respostas)
+    [Gere aqui as 5 Q&As]
+    
+    --- REGRAS INQUEBRÁVEIS ---
+    - Não invente características. Use apenas os dados fornecidos.
+    - Não use clichês genéricos. Seja específico e factual.
+    - O conteúdo final deve ser único e superior ao dos concorrentes.
+    """
+    
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
     ]
+    
     try:
-        # Tenta usar o modelo `gemini-1.5-flash-latest` que é mais estável
-        model = genai.GenerativeModel("gemini-1.5-flash-latest")
-        response = model.generate_content("\n".join(prompt))
-        return response.text
+        # Chama o modelo através do cliente OpenRouter
+        response = client.chat.completions.create(
+            model="google/gemini-1.5-flash-latest",
+            messages=messages
+        )
+        return response.choices[0].message.content
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao chamar a API do Gemini para otimização: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao chamar a API do Gemini via OpenRouter para otimização: {e}")
 
 # <<< NOVO: Função refatorada para processar uma única URL (evita duplicação de código)
 def process_single_url(url: str) -> AnalyzeResponse:
