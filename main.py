@@ -108,14 +108,13 @@ def get_product_details(asin: str, country: str) -> dict:
         response = requests.get(api_url, headers=headers, params=querystring, timeout=30)
         response.raise_for_status()
         data = response.json().get("data")
-        if not data:
-            raise HTTPException(status_code=404, detail=f"Produto com ASIN {asin} não encontrado na API da Amazon.")
+        if not data or not data.get("product_title"):
+            raise HTTPException(status_code=404, detail=f"Produto com ASIN {asin} não encontrado na Amazon {country}.")
         return data
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=503, detail=f"Erro ao chamar a API da Amazon para detalhes. Verifique sua chave RapidAPI e o ASIN: {e}")
 
 def get_product_reviews(asin: str, country: str) -> dict:
-    """Busca os reviews de um produto."""
     api_url = "https://real-time-amazon-data.p.rapidapi.com/product-reviews"
     querystring = {"asin": asin, "country": country, "sort_by": "recent", "page_size": "20"}
     headers = {"x-rapidapi-key": RAPIDAPI_KEY, "x-rapidapi-host": "real-time-amazon-data.p.rapidapi.com"}
@@ -130,7 +129,6 @@ def get_product_reviews(asin: str, country: str) -> dict:
         return {"positive_reviews": [], "negative_reviews": []}
 
 def get_competitors(keyword: str, country: str, original_asin: str) -> list:
-    """Busca produtos na Amazon por palavra-chave para encontrar concorrentes."""
     api_url = "https://real-time-amazon-data.p.rapidapi.com/search"
     querystring = {"query": quote_plus(keyword), "country": country, "page_size":"10"}
     headers = {"x-rapidapi-key": RAPIDAPI_KEY, "x-rapidapi-host": "real-time-amazon-data.p.rapidapi.com"}
@@ -172,41 +170,31 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
     if not image_urls:
         return "Produto sem imagens para análise."
 
-    # Prepara o prompt de texto para o modelo
-    system_prompt = "Você é um analista de QA de e-commerce extremamente meticuloso e com foco em dados numéricos. Sua tarefa é comparar os DADOS TEXTUAIS de um produto com as IMAGENS NUMERADAS para encontrar contradições factuais, especialmente em dimensões, dados específicos dos produtos. Crie um relatório claro e conciso listando TODAS as discrepâncias. Se tudo estiver consistente, declare: 'Nenhuma inconsistência factual encontrada.'."
+    system_prompt = "Você é um analista de QA de e-commerce extremamente meticuloso e com foco em dados numéricos. Sua tarefa é comparar os DADOS TEXTUAIS de um produto com as IMAGENS NUMERADAS para encontrar contradições factuais. Crie um relatório claro e conciso listando TODAS as discrepâncias. Se tudo estiver consistente, declare: 'Nenhuma inconsistência factual encontrada.'."
     
-    user_prompt_text = f"""
-    --- DADOS TEXTUAIS DO PRODUTO ---
-    **Título:** {title}
-    **Dados do Listing - Conteúdo textual do anúncio:**
-    {full_text_content}
-    **Dimensões do Produto (texto):** {product_dimensions_text}
-    
-    --- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---
-    """
+    user_content = []
+    user_content.append({"type": "text", "text": f"""
+        --- DADOS TEXTUAIS DO PRODUTO ---
+        **Título:** {title}
+        **Dados do Listing - Conteúdo textual do anúncio:**
+        {full_text_content}
+        **Dimensões do Produto (texto):** {product_dimensions_text}
+        
+        --- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---
+    """})
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": []}
-    ]
-    
-    # Adiciona o prompt textual ao conteúdo do usuário
-    messages[1]["content"].append({"type": "text", "text": user_prompt_text})
-
-    # Adiciona as imagens ao conteúdo do usuário
     image_count = 0
     for url in image_urls[:5]:
         try:
-            # Baixa a imagem e a converte para Base64 (CORRIGIDO)
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             image_b64 = base64.b64encode(response.content).decode("utf-8")
             
-            messages[1]["content"].append({
+            user_content.append({
                 "type": "image_url",
                 "image_url": {"url": f"data:{response.headers['Content-Type']};base64,{image_b64}"}
             })
-            messages[1]["content"].append({
+            user_content.append({
                 "type": "text",
                 "text": f"--- Imagem {image_count + 1} ---"
             })
@@ -218,10 +206,12 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
         return "Nenhuma imagem pôde ser baixada para análise."
 
     try:
-        # Chama o modelo através do cliente OpenRouter
         response = client.chat.completions.create(
             model="google/gemini-1.5-flash-latest",
-            messages=messages
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content}
+            ]
         )
         return response.choices[0].message.content
     except Exception as e:
@@ -270,16 +260,13 @@ def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competi
     - O conteúdo final deve ser único e superior ao dos concorrentes.
     """
     
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt}
-    ]
-    
     try:
-        # Chama o modelo através do cliente OpenRouter
         response = client.chat.completions.create(
             model="google/gemini-1.5-flash-latest",
-            messages=messages
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
         )
         return response.choices[0].message.content
     except Exception as e:
