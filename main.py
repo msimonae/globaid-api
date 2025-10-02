@@ -3,14 +3,12 @@ import os
 import re
 import io
 import requests
+import base64
 from urllib.parse import urlparse, quote_plus, parse_qs
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 from dotenv import load_dotenv
 from typing import Optional, List
-from PIL import Image
-
-# 1. Instala a biblioteca do OpenAI
 from openai import OpenAI
 
 # Carrega as variáveis de ambiente
@@ -21,9 +19,9 @@ RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 if not RAPIDAPI_KEY or not OPENROUTER_API_KEY:
-    raise RuntimeError("🚨 ALERTA: Chaves de API não encontradas.")
+    raise RuntimeError("🚨 ALERTA: Chaves de API não encontradas. Verifique .env")
 
-# 2. Configura o cliente da API OpenRouter
+# Configura o cliente da API do OpenRouter
 try:
     client = OpenAI(
         base_url="https://openrouter.ai/api/v1",
@@ -110,10 +108,11 @@ def get_product_details(asin: str, country: str) -> dict:
         response = requests.get(api_url, headers=headers, params=querystring, timeout=30)
         response.raise_for_status()
         data = response.json().get("data")
-        if not data: raise HTTPException(status_code=404, detail="Produto não encontrado na API da Amazon.")
+        if not data:
+            raise HTTPException(status_code=404, detail=f"Produto com ASIN {asin} não encontrado na API da Amazon.")
         return data
     except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=503, detail=f"Erro ao chamar a API da Amazon para detalhes: {e}")
+        raise HTTPException(status_code=503, detail=f"Erro ao chamar a API da Amazon para detalhes. Verifique sua chave RapidAPI e o ASIN: {e}")
 
 def get_product_reviews(asin: str, country: str) -> dict:
     """Busca os reviews de um produto."""
@@ -198,14 +197,14 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
     image_count = 0
     for url in image_urls[:5]:
         try:
-            # Baixa a imagem e a converte para base64
+            # Baixa a imagem e a converte para Base64 (CORRIGIDO)
             response = requests.get(url, timeout=10)
             response.raise_for_status()
-            image_b64 = f"data:{response.headers['Content-Type']};base64,{io.BytesIO(response.content).read().hex()}" # OpenAI-compatible format
+            image_b64 = base64.b64encode(response.content).decode("utf-8")
             
             messages[1]["content"].append({
                 "type": "image_url",
-                "image_url": {"url": image_b64}
+                "image_url": {"url": f"data:{response.headers['Content-Type']};base64,{image_b64}"}
             })
             messages[1]["content"].append({
                 "type": "text",
