@@ -1,8 +1,6 @@
 fastapi
 uvicorn[standard]
 requests
-# A biblioteca do Google não é mais necessária, você pode removê-la ou deixá-la como um comentário.
-# google-generativeai>=0.7.1
 openai
 python-dotenv
 pydantic
