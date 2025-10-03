@@ -3,7 +3,7 @@ import os
 import re
 import io
 import requests
-import google.generativeai as genai
+#import google.generativeai as genai
 from urllib.parse import urlparse, quote_plus, parse_qs
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
@@ -295,4 +295,5 @@ def run_optimization_pipeline(request: OptimizeRequest):
         asin=asin,
         country=country
     )
+
 
