@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 from dotenv import load_dotenv
 from typing import Optional, List
-from openai import OpenAI
+from openai import OpenAI # Importa o cliente OpenAI
 
 # Carrega as variáveis de ambiente
 load_dotenv()
@@ -147,7 +147,7 @@ def get_competitors(keyword: str, country: str, original_asin: str) -> list:
     except requests.exceptions.RequestException:
         return []
 
-# --- Agente 3: Analisador de Inconsistências (FUNÇÃO ADAPTADA PARA GPT-4o) ---
+# --- Agente 3: Analisador de Inconsistências (FUNÇÃO ADAPTADA PARA GPT-4o-mini) ---
 def analyze_product_with_gemini(product_data: dict, country: str) -> str:
     product_dimensions_text = "N/A"
     if info_table := product_data.get("product_information"):
@@ -155,31 +155,19 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
             if "dimens" in key.lower():
                 product_dimensions_text = value
                 break
-
     title = product_data.get("product_title", "N/A")
-
-    full_text_content = ""
-    if product_data.get("about_product"):
-        full_text_content += f"- {product_data['about_product']}\n"
-    if product_data.get("product_information"):
-        full_text_content += f"- {product_data['product_information']}\n"
-    if product_data.get("product_details"):
-        full_text_content += f"- {product_data['product_details']}\n"
-    if product_data.get("product_description"):
-        full_text_content += f"\nDescrição: \n{product_data['product_description']}\n"
-
+    features = "\n- ".join(product_data.get("about_product", []))
     image_urls = product_data.get("product_photos", [])
     if not image_urls:
         return "Produto sem imagens para análise."
-
-    system_prompt = "Você é um analista de QA de e-commerce extremamente meticuloso e com foco em dados numéricos. Sua tarefa é comparar os DADOS TEXTUAIS de um produto com as IMAGENS NUMERADAS para encontrar contradições factuais, especialmente em dimensões, dados específicos dos produtos. Crie um relatório claro e conciso listando TODAS as discrepâncias. Se tudo estiver consistente, declare: 'Nenhuma inconsistência factual encontrada.'."
+    
+    system_prompt = "Você é um analista de QA de e-commerce extremamente meticuloso e com foco em dados numéricos. Sua tarefa é comparar os DADOS TEXTUAIS de um produto com as IMAGENS NUMERADAS para encontrar contradições factuais, especialmente em dimensões. Siga estes passos: 1. Analise CADA imagem e extraia todas as especificações numéricas visíveis. 2. Compare os números das imagens com os dados textuais. 3. Se encontrar uma contradição, descreva-a de forma clara. 4. É OBRIGATÓRIO citar o número da imagem. Se tudo estiver consistente, declare: 'Nenhuma inconsistência factual encontrada.'."
     
     user_content = []
     user_content.append({"type": "text", "text": f"""
         --- DADOS TEXTUAIS DO PRODUTO ---
         **Título:** {title}
-        **Dados do Listing - Conteúdo textual do anúncio:**
-        {full_text_content}
+        **Destaques:**\n- {features}
         **Dimensões do Produto (texto):** {product_dimensions_text}
         
         --- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---
@@ -209,7 +197,7 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
 
     try:
         response = client.chat.completions.create(
-            model="openai/gpt-4o",  # Modelo GPT-4o para análise multimodal
+            model="openai/gpt-4o-mini",  # Modelo GPT-4o-mini para análise multimodal
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content}
@@ -219,7 +207,7 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao chamar a API para análise: {e}")
 
-# --- Agente 4: Otimizador de Listing com GPT-4o ---
+# --- Agente 4: Otimizador de Listing com GPT-4o-mini ---
 def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competitors_data: list, url_info: dict) -> str:
     lang, market = MARKET_MAP.get(url_info["country"], ("English (US)", f"Amazon {url_info['country']}"))
     
@@ -264,7 +252,7 @@ def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competi
     
     try:
         response = client.chat.completions.create(
-            model="openai/gpt-4o",  # Modelo GPT-4o para otimização
+            model="openai/gpt-4o-mini",  # Modelo GPT-4o-mini para otimização
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
