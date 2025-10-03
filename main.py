@@ -3,16 +3,17 @@ import os
 import re
 import io
 import requests
-import base64
+import google.generativeai as genai
 from urllib.parse import urlparse, quote_plus, parse_qs
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 from dotenv import load_dotenv
 from typing import Optional, List
-from openai import OpenAI # Importa o cliente OpenAI
+from PIL import Image
 
 # Carrega as variáveis de ambiente
 load_dotenv()
+
 
 # --- Configuração das Chaves de API ---
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
@@ -30,6 +31,7 @@ try:
     print("✅ API do OpenRouter configurada com sucesso.")
 except Exception as e:
     raise RuntimeError(f"🚨 ALERTA: Falha ao configurar a API do OpenRouter. Erro: {e}")
+
 
 # Inicializa a aplicação FastAPI
 app = FastAPI(
@@ -72,7 +74,6 @@ MARKET_MAP = {
     "MX": ("Español (México)", "Amazon MX"),
     "ES": ("Español (España)", "Amazon ES"),
 }
-
 # --- Agentes de Extração de Dados ---
 def extract_product_info_from_url(url: str) -> Optional[dict]:
     asin = None
@@ -108,11 +109,10 @@ def get_product_details(asin: str, country: str) -> dict:
         response = requests.get(api_url, headers=headers, params=querystring, timeout=30)
         response.raise_for_status()
         data = response.json().get("data")
-        if not data or not data.get("product_title"):
-            raise HTTPException(status_code=404, detail=f"Produto com ASIN {asin} não encontrado na Amazon {country}.")
+        if not data: raise HTTPException(status_code=404, detail="Produto não encontrado na API da Amazon.")
         return data
     except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=503, detail=f"Erro ao chamar a API da Amazon para detalhes. Verifique sua chave RapidAPI e o ASIN: {e}")
+        raise HTTPException(status_code=503, detail=f"Erro ao chamar a API da Amazon para detalhes: {e}")
 
 def get_product_reviews(asin: str, country: str) -> dict:
     """Busca os reviews de um produto."""
@@ -146,8 +146,7 @@ def get_competitors(keyword: str, country: str, original_asin: str) -> list:
         return competitors
     except requests.exceptions.RequestException:
         return []
-
-# --- Agente 3: Analisador de Inconsistências (FUNÇÃO ADAPTADA PARA GPT-4o-mini) ---
+# --- Agente 3: Analisador de Inconsistências (FUNÇÃO ATUALIZADA COM SEU PROMPT) ---
 def analyze_product_with_gemini(product_data: dict, country: str) -> str:
     product_dimensions_text = "N/A"
     if info_table := product_data.get("product_information"):
@@ -160,107 +159,65 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
     image_urls = product_data.get("product_photos", [])
     if not image_urls:
         return "Produto sem imagens para análise."
-    
-    system_prompt = "Você é um analista de QA de e-commerce extremamente meticuloso e com foco em dados numéricos. Sua tarefa é comparar os DADOS TEXTUAIS de um produto com as IMAGENS NUMERADAS para encontrar contradições factuais, especialmente em dimensões. Siga estes passos: 1. Analise CADA imagem e extraia todas as especificações numéricas visíveis. 2. Compare os números das imagens com os dados textuais. 3. Se encontrar uma contradição, descreva-a de forma clara. 4. É OBRIGATÓRIO citar o número da imagem. Se tudo estiver consistente, declare: 'Nenhuma inconsistência factual encontrada.'."
-    
-    user_content = []
-    user_content.append({"type": "text", "text": f"""
-        --- DADOS TEXTUAIS DO PRODUTO ---
-        **Título:** {title}
-        **Destaques:**\n- {features}
-        **Dimensões do Produto (texto):** {product_dimensions_text}
-        
-        --- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---
-    """})
-
+    prompt_parts = [
+        "Você é um analista de QA de e-commerce extremamente meticuloso e com foco em dados numéricos.",
+        "Sua tarefa é comparar os DADOS TEXTUAIS de um produto com as IMAGENS NUMERADAS para encontrar contradições factuais, especialmente em dimensões.",
+        "Siga estes passos:",
+        "1. Primeiro, analise CADA imagem e extraia todas as especificações numéricas visíveis (altura, largura, profundidade, peso, etc.).",
+        "2. Segundo, compare os números extraídos das imagens com os dados fornecidos na seção 'DADOS TEXTUAIS'.",
+        "3. Terceiro, se encontrar uma contradição numérica, descreva-a de forma clara e objetiva, mencionando os valores exatos do texto e da imagem.",
+        "4. É OBRIGATÓRIO citar o número da imagem onde a inconsistência foi encontrada (ex: 'Na Imagem 2...').",
+        "Se tudo estiver consistente, declare: 'Nenhuma inconsistência factual encontrada.'",
+        "\n--- DADOS TEXTUAIS DO PRODUTO ---",
+        f"**Título:** {title}",
+        f"**Destaques:**\n- {features}",
+        f"**Dimensões do Produto (texto):** {product_dimensions_text}",
+        "\n--- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---",
+    ]
     image_count = 0
     for url in image_urls[:5]:
         try:
             response = requests.get(url, timeout=10)
             response.raise_for_status()
-            image_b64 = base64.b64encode(response.content).decode("utf-8")
-            
-            user_content.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:{response.headers['Content-Type']};base64,{image_b64}"}
-            })
-            user_content.append({
-                "type": "text",
-                "text": f"--- Imagem {image_count + 1} ---"
-            })
+            img = Image.open(io.BytesIO(response.content))
+            prompt_parts.append(f"--- Imagem {image_count + 1} ---")
+            prompt_parts.append(img)
             image_count += 1
         except Exception as e:
             print(f"Aviso: Falha ao processar a imagem {url}. Erro: {e}")
-
     if image_count == 0:
         return "Nenhuma imagem pôde ser baixada para análise."
-
     try:
-        response = client.chat.completions.create(
-            model="openai/gpt-4o-mini",  # Modelo GPT-4o-mini para análise multimodal
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content}
-            ]
-        )
-        return response.choices[0].message.content
+        model = genai.GenerativeModel("gemini-1.5-pro-latest")
+        response = model.generate_content(prompt_parts)
+        return response.text
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao chamar a API para análise: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao chamar a API do Gemini para análise: {e}")
 
-# --- Agente 4: Otimizador de Listing com GPT-4o-mini ---
+# --- Agente 4: Otimizador de Listing com Gemini ---
 def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competitors_data: list, url_info: dict) -> str:
     lang, market = MARKET_MAP.get(url_info["country"], ("English (US)", f"Amazon {url_info['country']}"))
-    
-    system_prompt = f"Você é um Consultor Sênior de E-commerce, mestre em SEO para o ecossistema Amazon (A9, Rufus). Sua missão é otimizar um listing para maximizar vendas no mercado {market}. A resposta DEVE ser inteiramente em {lang}."
-    
-    user_prompt = f"""
-    --- DADOS DO PRODUTO ATUAL ---
-    Título: {product_data.get('product_title', 'N/A')}
-    Features: {product_data.get('about_product', [])}
-    
-    --- INTELIGÊNCIA DE MERCADO ---
-    Reviews Positivos: {reviews_data.get('positive_reviews')}
-    Reviews Negativos: {reviews_data.get('negative_reviews')}
-    Concorrentes: {competitors_data}
-    
-    --- INSTRUÇÕES E FORMATO DE SAÍDA OBRIGATÓRIO ---
-    Gere sua resposta seguindo ESTRITAMENTE a estrutura Markdown abaixo, sem omitir nenhuma seção. Use os títulos exatamente como especificados.
-    
-    ### 1. Título Otimizado (SEO)
-    [Gere aqui o título otimizado]
-    
-    ### 2. Feature Bullets Otimizados (5 Pontos)
-    [Gere aqui os 5 feature bullets, um por linha]
-    
-    ### 3. Descrição do Produto (Estrutura para A+ Content)
-    [Gere aqui a descrição persuasiva]
-    
-    ### 4. Análise Competitiva e Estratégia
-    [Gere aqui a tabela comparativa e o parágrafo de estratégia]
-    
-    ### 5. Sugestões de Palavras-chave (Backend)
-    [Gere aqui a lista de 15-20 palavras-chave long-tail]
-    
-    ### 6. FAQ Estratégico (Top 5 Perguntas e Respostas)
-    [Gere aqui as 5 Q&As]
-    
-    --- REGRAS INQUEBRÁVEIS ---
-    - Não invente características. Use apenas os dados fornecidos.
-    - Não use clichês genéricos. Seja específico e factual.
-    - O conteúdo final deve ser único e superior ao dos concorrentes.
-    """
-    
+    prompt = [
+        f"Você é um Consultor Sênior de E-commerce, mestre em SEO para o ecossistema Amazon (A9, Rufus). Sua missão é otimizar um listing para maximizar vendas no mercado {market}.",
+        f"A resposta DEVE ser inteiramente em {lang}.",
+        f"--- DADOS DO PRODUTO ATUAL ---\nTítulo: {product_data.get('product_title', 'N/A')}\nFeatures: {product_data.get('about_product', [])}",
+        f"--- INTELIGÊNCIA DE MERCADO ---\nReviews Positivos: {reviews_data.get('positive_reviews')}\nReviews Negativos: {reviews_data.get('negative_reviews')}\nConcorrentes: {competitors_data}",
+        "\n--- INSTRUÇÕES E FORMATO DE SAÍDA OBRIGATÓRIO ---",
+        "Gere sua resposta seguindo ESTRITAMENTE a estrutura Markdown abaixo, sem omitir nenhuma seção. Use os títulos exatamente como especificados.",
+        "### 1. Título Otimizado (SEO)\n[Gere aqui o título otimizado]",
+        "### 2. Feature Bullets Otimizados (5 Pontos)\n[Gere aqui os 5 feature bullets, um por linha]",
+        "### 3. Descrição do Produto (Estrutura para A+ Content)\n[Gere aqui a descrição persuasiva]",
+        "### 4. Análise Competitiva e Estratégia\n[Gere aqui a tabela comparativa e o parágrafo de estratégia]",
+        "### 5. Sugestões de Palavras-chave (Backend)\n[Gere aqui a lista de 15-20 palavras-chave long-tail]",
+        "### 6. FAQ Estratégico (Top 5 Perguntas e Respostas)\n[Gere aqui as 5 Q&As]",
+        "\n--- REGRAS INQUEBRÁVEIS ---\n- Não invente características. Use apenas os dados fornecidos.\n- Não use clichês genéricos. Seja específico e factual.\n- O conteúdo final deve ser único e superior ao dos concorrentes."
+    ]
     try:
-        response = client.chat.completions.create(
-            model="google/gemini-2.5-pro",  
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ]
-        )
-        return response.choices[0].message.content
+        model = genai.GenerativeModel("google/gemini-2.5-pro")
+        response = model.generate_content("\n".join(prompt))
+        return response.text
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao chamar a API para otimização: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao chamar a API do Gemini para otimização: {e}")
 
 # <<< NOVO: Função refatorada para processar uma única URL (evita duplicação de código)
 def process_single_url(url: str) -> AnalyzeResponse:
@@ -307,9 +264,12 @@ def run_analysis_pipeline(request: AnalyzeRequest):
 def run_batch_analysis_pipeline(request: BatchAnalyzeRequest):
     """Endpoint para analisar uma lista de URLs em lote, agora com tratamento de erro."""
     try:
+        # Processa cada URL individualmente e coleta os resultados
         results = [process_single_url(str(url)) for url in request.amazon_urls]
         return BatchAnalyzeResponse(results=results)
     except Exception as e:
+        # Se ocorrer um erro inesperado durante o processamento em lote,
+        # retorna um erro 500 com uma mensagem clara.
         raise HTTPException(
             status_code=500,
             detail=f"Ocorreu um erro interno inesperado durante o processamento em lote: {str(e)}"
@@ -335,4 +295,3 @@ def run_optimization_pipeline(request: OptimizeRequest):
         asin=asin,
         country=country
     )
-
