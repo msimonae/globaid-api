@@ -252,7 +252,7 @@ def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competi
     
     try:
         response = client.chat.completions.create(
-            model="openai/gpt-4o-mini",  # Modelo GPT-4o-mini para otimização
+            model="google/gemini-2.5-pro",  
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -335,3 +335,4 @@ def run_optimization_pipeline(request: OptimizeRequest):
         asin=asin,
         country=country
     )
+
