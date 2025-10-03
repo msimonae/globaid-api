@@ -213,7 +213,7 @@ def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competi
         "\n--- REGRAS INQUEBRÁVEIS ---\n- Não invente características. Use apenas os dados fornecidos.\n- Não use clichês genéricos. Seja específico e factual.\n- O conteúdo final deve ser único e superior ao dos concorrentes."
     ]
     try:
-        model = genai.GenerativeModel("google/gemini-2.5-pro")
+        model = genai.GenerativeModel("google/gemini-2.5-flash")
         response = model.generate_content("\n".join(prompt))
         return response.text
     except Exception as e:
@@ -295,3 +295,4 @@ def run_optimization_pipeline(request: OptimizeRequest):
         asin=asin,
         country=country
     )
+
