@@ -148,49 +148,57 @@ def get_competitors(keyword: str, country: str, original_asin: str) -> list:
 
 # --- Agente 3: Analisador de Inconsistências (FUNÇÃO ATUALIZADA) ---
 def analyze_product_with_gemini(product_data: dict, country: str) -> str:
+    """
+    Versão corrigida: não envia objetos PIL.Image para a API.
+    Em vez disso envia um prompt textual que inclui os URLs das imagens numeradas.
+    """
     product_dimensions_text = "N/A"
-    if info_table := product_data.get("product_information"):
-        for key, value in info_table.items():
-            if "dimens" in key.lower():
-                product_dimensions_text = value
-                break
+    info_table = product_data.get("product_information") or {}
+    for key, value in info_table.items():
+        if "dimens" in key.lower():
+            product_dimensions_text = value
+            break
 
     title = product_data.get("product_title", "N/A")
-    features = "\n- ".join(product_data.get("about_product", []))
-    image_urls = product_data.get("product_photos", [])
+    features_list = product_data.get("about_product", []) or []
+    # formata os highlights
+    features_text = "\n- ".join(features_list) if features_list else "N/A"
+    image_urls = product_data.get("product_photos", []) or []
 
     if not image_urls:
         return "Produto sem imagens para análise."
 
-    # Conteúdo inicial do prompt
-    user_prompt = [
+    # Monta o prompt como texto (inclui os URLs das imagens numeradas)
+    prompt_lines = [
         "Você é um analista de QA de e-commerce extremamente meticuloso e com foco em dados numéricos.",
-        "Sua tarefa é comparar os DADOS TEXTUAIS de um produto com as IMAGENS NUMERADAS para encontrar contradições factuais, especialmente em dimensões.",
+        "Sua tarefa é comparar os DADOS TEXTUAIS de um produto com as IMAGENS (fornecidas como LINKS) numeradas para encontrar contradições factuais, especialmente em dimensões.",
         "Siga estes passos:",
-        "1. Primeiro, analise CADA imagem e extraia todas as especificações numéricas visíveis (altura, largura, profundidade, peso, etc.).",
-        "2. Segundo, compare os números extraídos das imagens com os dados fornecidos na seção 'DADOS TEXTUAIS'.",
-        "3. Terceiro, se encontrar uma contradição numérica, descreva-a de forma clara e objetiva, mencionando os valores exatos do texto e da imagem.",
-        "4. É OBRIGATÓRIO citar o número da imagem onde a inconsistência foi encontrada (ex: 'Na Imagem 2...').",
-        "Se tudo estiver consistente, declare: 'Nenhuma inconsistência factual encontrada.'",
-        "\n--- DADOS TEXTUAIS DO PRODUTO ---",
+        "1) Para cada imagem (link) extraia todas as especificações numéricas visíveis (altura, largura, profundidade, peso, etc.).",
+        "2) Compare os números extraídos das imagens com os dados fornecidos na seção 'DADOS TEXTUAIS'.",
+        "3) Se encontrar contradição, descreva-a de forma clara e objetiva, mencionando os valores do texto e da imagem e citando o número da imagem (ex: 'Na Imagem 2...').",
+        "4) Se tudo estiver consistente, declare: 'Nenhuma inconsistência factual encontrada.'",
+        "",
+        "--- DADOS TEXTUAIS DO PRODUTO ---",
         f"**Título:** {title}",
-        f"**Destaques:**\n- {features}",
+        f"**Destaques:**\n- {features_text}",
         f"**Dimensões do Produto (texto):** {product_dimensions_text}",
-        "\n--- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---",
+        "",
+        "--- IMAGENS PARA ANÁLISE (links numerados, verifique cada link) ---",
     ]
 
-    # Construir conteúdo multimodal: texto + imagens
-    content = [{"type": "text", "text": "\n".join(user_prompt)}]
+    # acrescenta até 5 imagens com numeração
+    for i, url in enumerate(image_urls[:5], start=1):
+        prompt_lines.append(f"Imagem {i}: {url}")
 
-    for idx, url in enumerate(image_urls[:5]):
-        content.append({"type": "text", "text": f"--- Imagem {idx+1} ---"})
-        content.append({"type": "image_url", "image_url": {"url": url}})
+    prompt_text = "\n".join(prompt_lines)
 
     try:
+        # Enviamos apenas texto (com os links) — assim evitamos problemas de serialização.
         response = client.chat.completions.create(
             model="google/gemini-2.5-pro",
-            messages=[{"role": "user", "content": content}]
+            messages=[{"role": "user", "content": prompt_text}],
         )
+        # Retorna o texto gerado pelo modelo
         return response.choices[0].message.content
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao chamar a API para análise: {e}")
@@ -302,4 +310,5 @@ def run_optimization_pipeline(request: OptimizeRequest):
         asin=asin,
         country=country
     )
+
 
