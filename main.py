@@ -160,22 +160,27 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
             break
 
     # Dados textuais do produto
+    # Dados textuais principais
     title = product_data.get("product_title", "N/A")
+    description = product_data.get("product_description", "")
+    features = product_data.get("about_product", []) or []
+    features_text = "\n- ".join(features) if features else "N/A"
 
-    # Inicializa a variável antes de concatenar
-    full_text_content = ""
-    if product_data.get("about_product"):
-        full_text_content += f"- {product_data['about_product']}\n"
-    if product_data.get("product_information"):
-        full_text_content += f"- {product_data['product_information']}\n"
-    if product_data.get("product_details"):
-        full_text_content += f"- {product_data['product_details']}\n"
-    if product_data.get("product_description"):
-        full_text_content += f"\nDescrição: \n{product_data['product_description']}\n"
+    # Monta conteúdo textual consolidado
+    full_text_content = f"{description}\n\nFeatures:\n- {features_text}".strip()
 
-    image_urls = product_data.get("product_photos", [])
+    # Lista de imagens
+    image_urls = product_data.get("product_photos", []) or []
+
+    # Se não houver imagens, ainda assim retorna relatório textual
     if not image_urls:
-        return "Produto sem imagens para análise."
+        return (
+            f"⚠️ Nenhuma imagem de produto foi retornada pela API.\n"
+            f"--- DADOS TEXTUAIS ---\n"
+            f"**Título:** {title}\n"
+            f"**Conteúdo do anúncio:**\n{full_text_content}\n"
+            f"**Dimensões (texto):** {product_dimensions_text}"
+        )
 
     prompt_parts = [
         "Você é um analista de QA de e-commerce extremamente meticuloso e com foco em dados numéricos.",
@@ -203,28 +208,17 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
         "\n--- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---",
     ]
 
-    image_count = 0
-    for url in image_urls[:5]:
-        try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            img = Image.open(io.BytesIO(response.content))
-            prompt_parts.append(f"--- Imagem {image_count + 1} ---")
-            prompt_parts.append(img)
-            image_count += 1
-        except Exception as e:
-            print(f"Aviso: Falha ao processar a imagem {url}. Erro: {e}")
+    for i, url in enumerate(image_urls[:5], start=1):
+        prompt_parts.append(f"Imagem {i}: {url}")
 
-    if image_count == 0:
-        return "Nenhuma imagem pôde ser baixada para análise."
+    # Junta tudo em uma string final
+    prompt_text = "\n".join(prompt_parts)
 
     try:
-        # Enviamos apenas texto (com os links) — assim evitamos problemas de serialização.
         response = client.chat.completions.create(
             model="google/gemini-2.5-pro",
             messages=[{"role": "user", "content": prompt_text}],
         )
-        # Retorna o texto gerado pelo modelo
         return response.choices[0].message.content
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao chamar a API para análise: {e}")
@@ -336,6 +330,7 @@ def run_optimization_pipeline(request: OptimizeRequest):
         asin=asin,
         country=country
     )
+
 
 
 
