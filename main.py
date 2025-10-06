@@ -3,14 +3,12 @@ import os
 import re
 import io
 import requests
-import google.generativeai as genai
 from urllib.parse import urlparse, quote_plus, parse_qs
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 from dotenv import load_dotenv
 from typing import Optional, List
 from PIL import Image
-# Linha removida pois não é mais utilizada: import google.generativeai as genai 
 from openai import OpenAI
 
 # Carrega as variáveis de ambiente
@@ -147,7 +145,8 @@ def get_competitors(keyword: str, country: str, original_asin: str) -> list:
         return competitors
     except requests.exceptions.RequestException:
         return []
-# --- Agente 3: Analisador de Inconsistências (FUNÇÃO ATUALIZADA COM SEU PROMPT) ---
+
+# --- Agente 3: Analisador de Inconsistências (FUNÇÃO ATUALIZADA) ---
 def analyze_product_with_gemini(product_data: dict, country: str) -> str:
     product_dimensions_text = "N/A"
     if info_table := product_data.get("product_information"):
@@ -158,9 +157,12 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
     title = product_data.get("product_title", "N/A")
     features = "\n- ".join(product_data.get("about_product", []))
     image_urls = product_data.get("product_photos", [])
+    
     if not image_urls:
         return "Produto sem imagens para análise."
-    prompt_parts = [
+    
+    # Prepara o prompt e as imagens para a API
+    user_content_list = [
         "Você é um analista de QA de e-commerce extremamente meticuloso e com foco em dados numéricos.",
         "Sua tarefa é comparar os DADOS TEXTUAIS de um produto com as IMAGENS NUMERADAS para encontrar contradições factuais, especialmente em dimensões.",
         "Siga estes passos:",
@@ -175,35 +177,38 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
         f"**Dimensões do Produto (texto):** {product_dimensions_text}",
         "\n--- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---",
     ]
+    
     image_count = 0
     for url in image_urls[:5]:
         try:
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             img = Image.open(io.BytesIO(response.content))
-            prompt_parts.append(f"--- Imagem {image_count + 1} ---")
-            prompt_parts.append(img)
+            user_content_list.append(f"--- Imagem {image_count + 1} ---")
+            user_content_list.append(img)
             image_count += 1
         except Exception as e:
             print(f"Aviso: Falha ao processar a imagem {url}. Erro: {e}")
+    
     if image_count == 0:
         return "Nenhuma imagem pôde ser baixada para análise."
+    
     try:
         response = client.chat.completions.create(
-            model="google/gemini-2.5-pro",  # Modelo GEMINI para análise multimodal
+            model="google/gemini-2.5-pro",
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content}
+                {"role": "user", "content": user_content_list}
             ]
         )
         return response.choices[0].message.content
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao chamar a API para análise: {e}")
 
-# --- Agente 4: Otimizador de Listing com Gemini ---
+# --- Agente 4: Otimizador de Listing com Gemini (FUNÇÃO ATUALIZADA) ---
 def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competitors_data: list, url_info: dict) -> str:
     lang, market = MARKET_MAP.get(url_info["country"], ("English (US)", f"Amazon {url_info['country']}"))
-    prompt = [
+    
+    user_content = [
         f"Você é um Consultor Sênior de E-commerce, mestre em SEO para o ecossistema Amazon (A9, Rufus). Sua missão é otimizar um listing para maximizar vendas no mercado {market}.",
         f"A resposta DEVE ser inteiramente em {lang}.",
         f"--- DADOS DO PRODUTO ATUAL ---\nTítulo: {product_data.get('product_title', 'N/A')}\nFeatures: {product_data.get('about_product', [])}",
@@ -218,17 +223,17 @@ def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competi
         "### 6. FAQ Estratégico (Top 5 Perguntas e Respostas)\n[Gere aqui as 5 Q&As]",
         "\n--- REGRAS INQUEBRÁVEIS ---\n- Não invente características. Use apenas os dados fornecidos.\n- Não use clichês genéricos. Seja específico e factual.\n- O conteúdo final deve ser único e superior ao dos concorrentes."
     ]
+
     try:
         response = client.chat.completions.create(
-            model="google/gemini-2.5-pro",  # Modelo GEMINI para análise multimodal
+            model="google/gemini-2.5-pro",
             messages=[
-                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content}
             ]
         )
         return response.choices[0].message.content
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao chamar a API para análise: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao chamar a API para otimização: {e}")
 
 # <<< NOVO: Função refatorada para processar uma única URL (evita duplicação de código)
 def process_single_url(url: str) -> AnalyzeResponse:
