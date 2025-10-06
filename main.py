@@ -154,15 +154,16 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
             if "dimens" in key.lower():
                 product_dimensions_text = value
                 break
+
     title = product_data.get("product_title", "N/A")
     features = "\n- ".join(product_data.get("about_product", []))
     image_urls = product_data.get("product_photos", [])
-    
+
     if not image_urls:
         return "Produto sem imagens para análise."
-    
-    # Prepara o prompt e as imagens para a API
-    user_content_list = [
+
+    # Conteúdo inicial do prompt
+    user_prompt = [
         "Você é um analista de QA de e-commerce extremamente meticuloso e com foco em dados numéricos.",
         "Sua tarefa é comparar os DADOS TEXTUAIS de um produto com as IMAGENS NUMERADAS para encontrar contradições factuais, especialmente em dimensões.",
         "Siga estes passos:",
@@ -177,28 +178,18 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
         f"**Dimensões do Produto (texto):** {product_dimensions_text}",
         "\n--- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---",
     ]
-    
-    image_count = 0
-    for url in image_urls[:5]:
-        try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            img = Image.open(io.BytesIO(response.content))
-            user_content_list.append(f"--- Imagem {image_count + 1} ---")
-            user_content_list.append(img)
-            image_count += 1
-        except Exception as e:
-            print(f"Aviso: Falha ao processar a imagem {url}. Erro: {e}")
-    
-    if image_count == 0:
-        return "Nenhuma imagem pôde ser baixada para análise."
-    
+
+    # Construir conteúdo multimodal: texto + imagens
+    content = [{"type": "text", "text": "\n".join(user_prompt)}]
+
+    for idx, url in enumerate(image_urls[:5]):
+        content.append({"type": "text", "text": f"--- Imagem {idx+1} ---"})
+        content.append({"type": "image_url", "image_url": {"url": url}})
+
     try:
         response = client.chat.completions.create(
-            model="openai/gpt-4o-mini",
-            messages=[
-                {"role": "user", "content": user_content_list}
-            ]
+            model="google/gemini-2.5-pro",
+            messages=[{"role": "user", "content": content}]
         )
         return response.choices[0].message.content
     except Exception as e:
@@ -226,7 +217,7 @@ def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competi
 
     try:
         response = client.chat.completions.create(
-            model="openai/gpt-4o-mini",
+            model="google/gemini-2.5-pro",
             messages=[
                 {"role": "user", "content": user_content}
             ]
