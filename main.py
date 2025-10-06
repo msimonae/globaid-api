@@ -159,14 +159,37 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
             product_dimensions_text = value
             break
 
+    # Dados textuais do produto
     title = product_data.get("product_title", "N/A")
+    description_text = product_data.get("product_description", "")
     features_list = product_data.get("about_product", []) or []
-    # formata os highlights
-    features_text = "\n- ".join(features_list) if features_list else "N/A"
-    image_urls = product_data.get("product_photos", []) or []
+    features_text = "\n- ".join(features_list) if features_list else ""
+    full_text_content = f"{description_text}\n{features_text}".strip() or "N/A"
 
+    # Lista de imagens
+    image_urls = product_data.get("product_photos", []) or []
+    
+    
+    # title = product_data.get("product_title", "N/A")
+    # features_list = product_data.get("about_product", []) or []
+    # # formata os highlights
+    # features_text = "\n- ".join(features_list) if features_list else "N/A"
+    # image_urls = product_data.get("product_photos", []) or []
+
+    # Se não houver imagens, ainda assim gera análise textual
     if not image_urls:
-        return "Produto sem imagens para análise."
+        return (
+            f"⚠️ Nenhuma imagem de produto foi retornada pela API.\n"
+            f"--- DADOS TEXTUAIS DO PRODUTO ---\n"
+            f"**Título:** {title}\n"
+            f"**Dados do Listing - Conteúdo textual do anúncio:**\n{full_text_content}\n"
+            f"**Dimensões do Produto (texto):** {product_dimensions_text}\n"
+            f"➡️ Apenas análise textual foi realizada."
+        )
+
+    
+    # if not image_urls:
+    #     return "Produto sem imagens para análise."
 
     # Monta o prompt como texto (inclui os URLs das imagens numeradas)
     prompt_lines = [
@@ -334,6 +357,7 @@ def run_optimization_pipeline(request: OptimizeRequest):
         asin=asin,
         country=country
     )
+
 
 
 
