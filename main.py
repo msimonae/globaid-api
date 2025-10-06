@@ -175,15 +175,39 @@ def analyze_product_with_gemini(product_data: dict, country: str) -> str:
         "Siga estes passos:",
         "1) Para cada imagem (link) extraia todas as especificações numéricas visíveis (altura, largura, profundidade, peso, etc.).",
         "2) Compare os números extraídos das imagens com os dados fornecidos na seção 'DADOS TEXTUAIS'.",
-        "3) Se encontrar contradição, descreva-a de forma clara e objetiva, mencionando os valores do texto e da imagem e citando o número da imagem (ex: 'Na Imagem 2...').",
-        "4) Se tudo estiver consistente, declare: 'Nenhuma inconsistência factual encontrada.'",
-        "",
-        "--- DADOS TEXTUAIS DO PRODUTO ---",
+        "3) Analise o texto e as imagens a seguir. Aponte QUALQUER discrepância, por menor que seja, entre o que está escrito e o que é mostrado. Preste atenção especial aos dados estruturados, como dimensões, peso, voltagem, cor, material e quantidade de itens, comparando todas as fontes de texto com as imagens.",
+        "4) Se encontrar contradição, descreva-a de forma clara e objetiva, mencionando os valores do texto e da imagem e citando o número da imagem (ex: 'Na Imagem 2...').",
+        "5) Analise e compare os Dados do Listing - Conteúdo textual do anúncio e Dimensões do Produto (texto). Crie um relatório claro e conciso listando TODAS as discrepâncias encontradas.",
+        "Discrepâncias podem ser:\n"
+        "- Informações contraditórias (ex: texto diz 'bateria de 10h', imagem mostra 'bateria de 8h').\n"
+        "- Recursos mencionados no texto mas não mostrados ou validados nas imagens.\n"
+        "- Recursos ou textos importantes visíveis nas imagens mas não mencionados na descrição textual.\n"
+        "- Preste muita atenção a detalhes técnicos, como dimensões, peso, material, etc, nas imagens que estejam possivelmente inconsistentes com as informações textuais.\n"
+        "- Qualquer erro ou inconsistência que possa afetar a decisão de compra do cliente.\n"
+        "- Se houver discrepâncias, forneça uma explicação clara do porquê de cada uma ser considerada uma discrepância.\n"
+        "- Agrupe as discrepâncias por tipo, se possível, para facilitar a análise.",
+        "Se tudo estiver consistente, declare: 'Nenhuma inconsistência factual encontrada.'",
+        "\n--- DADOS TEXTUAIS DO PRODUTO ---",
         f"**Título:** {title}",
-        f"**Destaques:**\n- {features_text}",
+        f"**Dados do Listing - Conteúdo textual do anúncio:**\n{full_text_content}",
         f"**Dimensões do Produto (texto):** {product_dimensions_text}",
-        "",
-        "--- IMAGENS PARA ANÁLISE (links numerados, verifique cada link) ---",
+        "\n--- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---",
+        "5. Analise e compare os Dados do Listing - Conteúdo textual do anúncio e Dimensões do Produto (texto). Crie um relatório claro e conciso listando TODAS as discrepâncias encontradas.",
+        "Discrepâncias podem ser:\n"
+        "- Informações contraditórias (ex: texto diz 'bateria de 10h', imagem mostra 'bateria de 8h').\n"
+        "- Recursos mencionados no texto mas não mostrados ou validados nas imagens.\n"
+        "- Recursos ou textos importantes visíveis nas imagens mas não mencionados na descrição textual.\n"
+        "- Preste muita atenção a detalhes técnicos, como dimensões, peso, material, etc, nas imagens que estejam possivelmente inconsistentes com as informações textuais.\n"
+        "- Qualquer erro ou inconsistência que possa afetar a decisão de compra do cliente.\n"
+        "- Se houver discrepâncias, forneça uma explicação clara do porquê de cada uma ser considerada uma discrepância.\n"
+        "- Agrupe as discrepâncias por tipo, se possível, para facilitar a análise.",
+        "Se tudo estiver consistente, declare: 'Nenhuma inconsistência factual encontrada.'",
+        "\n--- DADOS TEXTUAIS DO PRODUTO ---",
+        f"**Título:** {title}",
+        f"**Dados do Listing - Conteúdo textual do anúncio:**\n{full_text_content}",
+        f"**Dimensões do Produto (texto):** {product_dimensions_text}",
+        "\n--- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---",
+
     ]
 
     # acrescenta até 5 imagens com numeração
@@ -310,5 +334,6 @@ def run_optimization_pipeline(request: OptimizeRequest):
         asin=asin,
         country=country
     )
+
 
 
