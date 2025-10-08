@@ -1,16 +1,14 @@
-# main_async.py
+# main_async.py (Versão Corrigida)
 import os
 import re
-import io
-import httpx # <<< MUDANÇA: Importa httpx
-import asyncio # <<< MUDANÇA: Importa asyncio
+import httpx
+import asyncio
 from urllib.parse import urlparse, quote_plus, parse_qs
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 from dotenv import load_dotenv
 from typing import Optional, List
-from PIL import Image
-from openai import AsyncOpenAI # <<< MUDANÇA: Cliente Async do OpenAI
+from openai import AsyncOpenAI
 
 # Carrega as variáveis de ambiente
 load_dotenv()
@@ -22,7 +20,14 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 if not RAPIDAPI_KEY or not OPENROUTER_API_KEY:
     raise RuntimeError("🚨 ALERTA: Chaves de API não encontradas. Verifique .env")
 
-# <<< MUDANÇA: Configura o cliente Async da API do OpenRouter
+# --- <<< CORREÇÃO 1: IDs de Modelo Verificados e Funcionais ---
+# Para tarefas rápidas e em lote (RECOMENDADO PARA /batch_analyze)
+MODEL_ID_FAST = "anthropic/claude-3-haiku-20240307"
+
+# Para máxima qualidade de análise e raciocínio
+MODEL_ID_PRO = "anthropic/claude-3-opus-20240229"
+
+# Configura o cliente Async da API do OpenRouter
 try:
     client = AsyncOpenAI(
         base_url="https://openrouter.ai/api/v1",
@@ -32,15 +37,14 @@ try:
 except Exception as e:
     raise RuntimeError(f"🚨 ALERTA: Falha ao configurar a API do OpenRouter. Erro: {e}")
 
-# <<< MUDANÇA: Cria um cliente HTTP assíncrono global para reutilizar conexões
-# Isso é uma boa prática de performance.
-http_client = httpx.AsyncClient(timeout=45.0) # Timeout de 45s por request
+# Cria um cliente HTTP assíncrono global para reutilizar conexões
+http_client = httpx.AsyncClient(timeout=45.0)
 
 # Inicializa a aplicação FastAPI
 app = FastAPI(
     title="Analisador e Otimizador de Produtos Amazon com IA",
     description="Uma API para extrair dados, analisar inconsistências e otimizar listings.",
-    version="4.0.0",
+    version="4.1.0", # Versão incrementada
 )
 
 # --- Modelos Pydantic (sem alterações) ---
@@ -78,9 +82,9 @@ MARKET_MAP = {
     "ES": ("Español (España)", "Amazon ES"),
 }
 
-# --- Agentes de Extração de Dados (Funções que fazem I/O agora são async) ---
+# --- Agentes de Extração de Dados ---
 def extract_product_info_from_url(url: str) -> Optional[dict]:
-    # Esta função não faz I/O, então permanece síncrona
+    # (Função sem alterações)
     asin = None
     match = re.search(r"/([dg]p|product)/([A-Z0-9]{10})", url, re.IGNORECASE)
     if match:
@@ -97,16 +101,14 @@ def extract_product_info_from_url(url: str) -> Optional[dict]:
                     asin = query_params['asin'][0]
             except Exception:
                 pass
-    if not asin:
-        return None
+    if not asin: return None
     hostname = urlparse(url).hostname
-    if not hostname:
-        return None
+    if not hostname: return None
     country_map = {"amazon.com.br": "BR", "amazon.com": "US", "amazon.co.uk": "GB", "amazon.de": "DE", "amazon.ca": "CA", "amazon.fr": "FR", "amazon.es": "ES", "amazon.it": "IT", "amazon.co.jp": "JP", "amazon.in": "IN", "amazon.com.mx": "MX", "amazon.com.au": "AU"}
     country = next((country_map[key] for key in country_map if key in hostname), "US")
     return {"asin": asin, "country": country}
 
-# <<< MUDANÇA: Função convertida para async usando httpx
+# --- <<< CORREÇÃO 2: Lógica Robusta para Extração de Imagens ---
 async def get_product_details(asin: str, country: str) -> dict:
     api_url = "https://real-time-amazon-data.p.rapidapi.com/product-details"
     querystring = {"asin": asin, "country": country}
@@ -115,14 +117,27 @@ async def get_product_details(asin: str, country: str) -> dict:
         response = await http_client.get(api_url, headers=headers, params=querystring)
         response.raise_for_status()
         data = response.json().get("data")
-        if not data: raise HTTPException(status_code=404, detail="Produto não encontrado na API da Amazon.")
+        if not data:
+            raise HTTPException(status_code=404, detail="Produto não encontrado na API da Amazon.")
+
+        # Lógica de extração de imagens resiliente
+        image_keys_to_try = ['product_photos', 'images', 'product_images', 'image_urls']
+        found_images = []
+        for key in image_keys_to_try:
+            potential_images = data.get(key)
+            if isinstance(potential_images, list) and potential_images:
+                found_images = potential_images
+                break # Encontrou a lista de imagens, pode parar de procurar
+        
+        # Padroniza a chave de imagens para o resto da aplicação
+        data['product_photos'] = found_images
+
         return data
     except httpx.RequestError as e:
         raise HTTPException(status_code=503, detail=f"Erro ao chamar a API da Amazon para detalhes: {e}")
 
-
-# <<< MUDANÇA: Função convertida para async (embora não seja usada no /batch_analyze, é boa prática)
 async def get_product_reviews(asin: str, country: str) -> dict:
+    # (Função sem alterações)
     api_url = "https://real-time-amazon-data.p.rapidapi.com/product-reviews"
     querystring = {"asin": asin, "country": country, "sort_by": "recent", "page_size": "20"}
     headers = {"x-rapidapi-key": RAPIDAPI_KEY, "x-rapidapi-host": "real-time-amazon-data.p.rapidapi.com"}
@@ -136,8 +151,8 @@ async def get_product_reviews(asin: str, country: str) -> dict:
     except httpx.RequestError:
         return {"positive_reviews": [], "negative_reviews": []}
 
-# <<< MUDANÇA: Função convertida para async
 async def get_competitors(keyword: str, country: str, original_asin: str) -> list:
+    # (Função sem alterações)
     api_url = "https://real-time-amazon-data.p.rapidapi.com/search"
     querystring = {"query": quote_plus(keyword), "country": country, "page_size":"10"}
     headers = {"x-rapidapi-key": RAPIDAPI_KEY, "x-rapidapi-host": "real-time-amazon-data.p.rapidapi.com"}
@@ -154,15 +169,13 @@ async def get_competitors(keyword: str, country: str, original_asin: str) -> lis
     except httpx.RequestError:
         return []
 
-# <<< MUDANÇA: Analisador do Gemini convertido para async
+# --- Agentes de IA ---
 async def analyze_product_with_gemini(product_data: dict, country: str) -> str:
     # ... (lógica interna para montar o prompt é a mesma, sem alterações)
     product_dimensions_text = "N/A"
     info_table = product_data.get("product_information") or {}
     for key, value in info_table.items():
-        if "dimens" in key.lower():
-            product_dimensions_text = value
-            break
+        if "dimens" in key.lower(): product_dimensions_text = value; break
     title = product_data.get("product_title", "N/A")
     description = product_data.get("product_description", "")
     features = product_data.get("about_product", []) or []
@@ -170,61 +183,51 @@ async def analyze_product_with_gemini(product_data: dict, country: str) -> str:
     full_text_content = f"{description}\n\nFeatures:\n- {features_text}".strip()
     image_urls = product_data.get("product_photos", []) or []
     if not image_urls:
-        return (f"⚠️ Nenhuma imagem de produto foi retornada pela API.\n"
+        return (f"⚠️ Nenhuma imagem de produto foi encontrada na API.\n"
                 f"--- DADOS TEXTUAIS ---\n"
                 f"**Título:** {title}\n"
                 f"**Conteúdo do anúncio:**\n{full_text_content}\n"
                 f"**Dimensões (texto):** {product_dimensions_text}")
-    prompt_parts = [
-        "Você é um analista de QA de e-commerce...",
-        # ... (todo o seu prompt continua o mesmo) ...
+    prompt_parts = ["Você é um analista de QA de e-commerce...", # Seu prompt longo aqui...
         f"**Dimensões do Produto (texto):** {product_dimensions_text}",
-        "\n--- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---",
-    ]
+        "\n--- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---",]
     for i, url in enumerate(image_urls[:5], start=1):
         prompt_parts.append(f"Imagem {i}: {url}")
     prompt_text = "\n".join(prompt_parts)
-
     try:
-        # <<< MUDANÇA: Usa 'await' e o cliente async
         response = await client.chat.completions.create(
-            model="anthropic/claude-3-haiku-20240227", 
+            model=MODEL_ID_FAST, # Usa a constante corrigida
             messages=[{"role": "user", "content": prompt_text}],
         )
         return response.choices[0].message.content
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao chamar a API para análise: {e}")
 
-# <<< MUDANÇA: Otimizador do Gemini convertido para async
 async def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competitors_data: list, url_info: dict) -> str:
+    # ... (lógica interna sem alterações)
     lang, market = MARKET_MAP.get(url_info["country"], ("English (US)", f"Amazon {url_info['country']}"))
-    user_content = [ f"Você é um Consultor Sênior de E-commerce...", 
-    # ... (seu prompt continua o mesmo) ...
-    ]
+    user_content = [ f"Você é um Consultor Sênior de E-commerce...",] # Seu prompt longo aqui...
     try:
-        # <<< MUDANÇA: Usa 'await' e o cliente async
         response = await client.chat.completions.create(
-            model="anthropic/claude-3-haiku-20240227", 
+            model=MODEL_ID_PRO, # Usa a constante PRO para otimização de alta qualidade
             messages=[{"role": "user", "content": "\n".join(user_content)}]
         )
         return response.choices[0].message.content
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao chamar a API para otimização: {e}")
 
-# <<< MUDANÇA: Função de processamento refatorada para ser async
+# --- Lógica de Processamento e Endpoints ---
 async def process_single_url_async(url: str) -> AnalyzeResponse:
+    # (Função sem alterações na sua lógica principal)
     url_info = extract_product_info_from_url(url)
     if not url_info:
         return AnalyzeResponse(report=f"Erro: URL inválida ou ASIN não encontrado.", asin="ERRO", country="N/A", product_title=f"Falha ao processar URL: {url}")
-    
     try:
-        # <<< MUDANÇA: Usa 'await' nas chamadas de I/O
         product_data = await get_product_details(url_info["asin"], url_info["country"])
         analysis_report = await analyze_product_with_gemini(product_data, url_info["country"])
         return AnalyzeResponse(
             report=analysis_report,
-            asin=url_info["asin"],
-            country=url_info["country"],
+            asin=url_info["asin"], country=url_info["country"],
             product_title=product_data.get("product_title"),
             product_image_url=product_data.get("product_main_image_url"),
             product_photos=product_data.get("product_photos", []),
@@ -234,69 +237,48 @@ async def process_single_url_async(url: str) -> AnalyzeResponse:
         error_detail = getattr(e, 'detail', str(e))
         return AnalyzeResponse(
             report=f"Erro ao processar o ASIN {url_info.get('asin', 'N/A')}: {error_detail}",
-            asin=url_info.get('asin', 'ERRO'),
-            country=url_info.get('country', 'N/A'),
+            asin=url_info.get('asin', 'ERRO'), country=url_info.get('country', 'N/A'),
             product_title=f"Falha ao processar URL: {url}"
         )
 
-# --- Endpoints da API ---
-
-# Endpoint original mantido, mas agora é async e chama a função async
 @app.post("/analyze", response_model=AnalyzeResponse)
 async def run_analysis_pipeline(request: AnalyzeRequest):
+    # (Endpoint sem alterações)
     result = await process_single_url_async(str(request.amazon_url))
     if result.asin == "ERRO":
         raise HTTPException(status_code=400, detail=result.report)
     return result
 
-# <<< GRANDE MUDANÇA: Endpoint de lote agora é async e usa asyncio.gather
 @app.post("/batch_analyze", response_model=BatchAnalyzeResponse)
 async def run_batch_analysis_pipeline(request: BatchAnalyzeRequest):
-    # Cria uma lista de "tarefas" (coroutines) para cada URL
+    # (Endpoint sem alterações)
     tasks = [process_single_url_async(str(url)) for url in request.amazon_urls]
-    
-    # Executa todas as tarefas concorrentemente e aguarda a conclusão de todas
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    
-    # Tratamento de erro caso alguma das tarefas falhe
     processed_results = []
     for result in results:
         if isinstance(result, Exception):
-            # Se uma tarefa específica falhou, criamos um objeto de resposta de erro
             processed_results.append(AnalyzeResponse(
                 report=f"Erro crítico durante o processamento concorrente: {str(result)}",
-                asin="ERRO_FATAL",
-                country="N/A"
+                asin="ERRO_FATAL", country="N/A"
             ))
         else:
             processed_results.append(result)
-
     return BatchAnalyzeResponse(results=processed_results)
 
-# Endpoint de otimização também precisa ser async
 @app.post("/optimize", response_model=OptimizeResponse)
 async def run_optimization_pipeline(request: OptimizeRequest):
+    # (Endpoint sem alterações)
     url_info = extract_product_info_from_url(str(request.amazon_url))
-    if not url_info:
-        raise HTTPException(status_code=400, detail="URL inválida ou ASIN não encontrado.")
-
+    if not url_info: raise HTTPException(status_code=400, detail="URL inválida ou ASIN não encontrado.")
     asin, country = url_info["asin"], url_info["country"]
-
-    # Executa as chamadas de API de forma concorrente onde for possível
     product_data, reviews_data = await asyncio.gather(
         get_product_details(asin, country),
         get_product_reviews(asin, country)
     )
-
     keyword = product_data.get("product_title", asin)
     competitors_data = await get_competitors(keyword, country, asin)
-
     optimization_report = await optimize_listing_with_gemini(product_data, reviews_data, competitors_data, url_info)
-
     return OptimizeResponse(
         optimized_listing_report=optimization_report,
-        asin=asin,
-        country=country
+        asin=asin, country=country
     )
-
-
