@@ -188,7 +188,7 @@ async def analyze_product_with_gemini(product_data: dict, country: str) -> str:
     try:
         # <<< MUDANÇA: Usa 'await' e o cliente async
         response = await client.chat.completions.create(
-            model="google/gemini-1.5-flash", # Recomendo Flash para velocidade em lote
+            model="gemini-2.5-pro", 
             messages=[{"role": "user", "content": prompt_text}],
         )
         return response.choices[0].message.content
@@ -204,7 +204,7 @@ async def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, c
     try:
         # <<< MUDANÇA: Usa 'await' e o cliente async
         response = await client.chat.completions.create(
-            model="google/gemini-1.5-flash", # Recomendo Flash para velocidade em lote
+            model="gemini-2.5-pro", 
             messages=[{"role": "user", "content": "\n".join(user_content)}]
         )
         return response.choices[0].message.content
@@ -298,3 +298,4 @@ async def run_optimization_pipeline(request: OptimizeRequest):
         asin=asin,
         country=country
     )
+
