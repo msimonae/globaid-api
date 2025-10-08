@@ -188,12 +188,37 @@ async def analyze_product_with_gemini(product_data: dict, country: str) -> str:
                 f"**Título:** {title}\n"
                 f"**Conteúdo do anúncio:**\n{full_text_content}\n"
                 f"**Dimensões (texto):** {product_dimensions_text}")
-    prompt_parts = ["Você é um analista de QA de e-commerce...", # Seu prompt longo aqui...
+    prompt_parts = [
+
+        "Você é um analista de QA de e-commerce extremamente meticuloso e com foco em dados numéricos.",
+        "Priorize a busca por inconsistências em especificações técnicas, recursos, nomes e funcionalidades. Além disso, verifique se existem informações que aparentam ser equivocadas ou erradas a respeito dos produtos.",
+        "Sua tarefa é comparar os DADOS TEXTUAIS de um produto com as IMAGENS NUMERADAS para encontrar contradições factuais, especialmente em dimensões, dados específicos dos produtos.",
+        "Siga estes passos:",
+        "1. Primeiro, analise CADA imagem e extraia todas as especificações numéricas visíveis (altura, largura, profundidade, peso, etc.).",
+        "2. Segundo, compare os números extraídos das imagens com os dados fornecidos na seção 'DADOS TEXTUAIS'.",
+        "3. Terceiro, se encontrar uma contradição numérica, descreva-a de forma clara e objetiva, mencionando os valores exatos do texto e da imagem.",
+        "4. É OBRIGATÓRIO citar o número da imagem onde a inconsistência foi encontrada (ex: 'Na Imagem 2...').",
+        "5. Analise e compare os Dados do Listing - Conteúdo textual do anúncio e Dimensões do Produto (texto). Crie um relatório claro e conciso listando TODAS as discrepâncias encontradas.",
+        "Discrepâncias podem ser:\n"
+        "- Informações contraditórias (ex: texto diz 'bateria de 10h', imagem mostra 'bateria de 8h').\n"
+        "- Recursos mencionados no texto mas não mostrados ou validados nas imagens.\n"
+        "- Recursos ou textos importantes visíveis nas imagens mas não mencionados na descrição textual.\n"
+        "- Preste muita atenção a detalhes técnicos, como dimensões, peso, material, etc, nas imagens que estejam possivelmente inconsistentes com as informações textuais.\n"
+        "- Qualquer erro ou inconsistência que possa afetar a decisão de compra do cliente.\n"
+        "- Se houver discrepâncias, forneça uma explicação clara do porquê de cada uma ser considerada uma discrepância.\n"
+        "- Agrupe as discrepâncias por tipo, se possível, para facilitar a análise.",
+        "Se tudo estiver consistente, declare: 'Nenhuma inconsistência factual encontrada.'",
+        "\n--- DADOS TEXTUAIS DO PRODUTO ---",
+        f"**Título:** {title}",
+        f"**Dados do Listing - Conteúdo textual do anúncio:**\n{full_text_content}",
         f"**Dimensões do Produto (texto):** {product_dimensions_text}",
-        "\n--- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---",]
+        "\n--- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---",
+    ]
+
     for i, url in enumerate(image_urls[:5], start=1):
         prompt_parts.append(f"Imagem {i}: {url}")
     prompt_text = "\n".join(prompt_parts)
+
     try:
         response = await client.chat.completions.create(
             model=MODEL_ID_FAST, # Usa a constante corrigida
@@ -206,7 +231,22 @@ async def analyze_product_with_gemini(product_data: dict, country: str) -> str:
 async def optimize_listing_with_gemini(product_data: dict, reviews_data: dict, competitors_data: list, url_info: dict) -> str:
     # ... (lógica interna sem alterações)
     lang, market = MARKET_MAP.get(url_info["country"], ("English (US)", f"Amazon {url_info['country']}"))
-    user_content = [ f"Você é um Consultor Sênior de E-commerce...",] # Seu prompt longo aqui...
+    user_content = [ 
+        f"Você é um Consultor Sênior de E-commerce, mestre em SEO para o ecossistema Amazon (A9, Rufus). Sua missão é otimizar um listing para maximizar vendas no mercado {market}.",
+        f"A resposta DEVE ser inteiramente em {lang}.",
+        f"--- DADOS DO PRODUTO ATUAL ---\nTítulo: {product_data.get('product_title', 'N/A')}\nFeatures: {product_data.get('about_product', [])}",
+        f"--- INTELIGÊNCIA DE MERCADO ---\nReviews Positivos: {reviews_data.get('positive_reviews')}\nReviews Negativos: {reviews_data.get('negative_reviews')}\nConcorrentes: {competitors_data}",
+        "\n--- INSTRUÇÕES E FORMATO DE SAÍDA OBRIGATÓRIO ---",
+        "Gere sua resposta seguindo ESTRITAMENTE a estrutura Markdown abaixo, sem omitir nenhuma seção. Use os títulos exatamente como especificados.",
+        "### 1. Título Otimizado (SEO)\n[Gere aqui o título otimizado]",
+        "### 2. Feature Bullets Otimizados (5 Pontos)\n[Gere aqui os 5 feature bullets, um por linha]",
+        "### 3. Descrição do Produto (Estrutura para A+ Content)\n[Gere aqui a descrição persuasiva]",
+        "### 4. Análise Competitiva e Estratégia\n[Gere aqui a tabela comparativa e o parágrafo de estratégia]",
+        "### 5. Sugestões de Palavras-chave (Backend)\n[Gere aqui a lista de 15-20 palavras-chave long-tail]",
+        "### 6. FAQ Estratégico (Top 5 Perguntas e Respostas)\n[Gere aqui as 5 Q&As]",
+        "\n--- REGRAS INQUEBRÁVEIS ---\n- Não invente características. Use apenas os dados fornecidos.\n- Não use clichês genéricos. Seja específico e factual.\n- O conteúdo final deve ser único e superior ao dos concorrentes."
+    ]
+
     try:
         response = await client.chat.completions.create(
             model=MODEL_ID_PRO, # Usa a constante PRO para otimização de alta qualidade
@@ -282,5 +322,4 @@ async def run_optimization_pipeline(request: OptimizeRequest):
         optimized_listing_report=optimization_report,
         asin=asin, country=country
     )
-
 
