@@ -22,10 +22,10 @@ if not RAPIDAPI_KEY or not OPENROUTER_API_KEY:
 
 # --- <<< CORREÇÃO 1: IDs de Modelo Verificados e Funcionais ---
 # Para tarefas rápidas e em lote (RECOMENDADO PARA /batch_analyze)
-MODEL_ID_FAST = "google/gemini-2.5-pro"
+MODEL_ID_FAST = "google/gemini-2.5-flash"
 
 # Para máxima qualidade de análise e raciocínio
-MODEL_ID_PRO = "google/gemini-2.5-pro"
+MODEL_ID_PRO = "google/gemini-2.5-flash"
 
 # Configura o cliente Async da API do OpenRouter
 try:
@@ -337,6 +337,7 @@ async def run_optimization_pipeline(request: OptimizeRequest):
         optimized_listing_report=optimization_report,
         asin=asin, country=country
     )
+
 
 
 
