@@ -1,9 +1,14 @@
+# --- Framework e Servidor ---
 fastapi
 uvicorn[standard]
-requests
-openai
-google-generativeai
-python-dotenv
-pydantic
-Pillow
 
+# --- Cliente HTTP Assíncrono ---
+httpx # Substitui 'requests' para chamadas de rede assíncronas
+
+# --- APIs Externas ---
+openai>=1.0.0 # Necessário para o cliente AsyncOpenAI
+
+# --- Utilitários ---
+python-dotenv # Para carregar variáveis de ambiente do .env
+pydantic      # Validação de dados, essencial para o FastAPI
+Pillow        # Biblioteca para manipulação de imagens (mesmo que não diretamente, pode ser dependência)
