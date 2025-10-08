@@ -194,7 +194,7 @@ async def analyze_product_with_gemini(product_data: dict, country: str) -> str:
         "Priorize a busca por inconsistências em especificações técnicas, recursos, nomes e funcionalidades. Além disso, verifique se existem informações que aparentam ser equivocadas ou erradas a respeito dos produtos.",
         "Sua tarefa é comparar os DADOS TEXTUAIS de um produto com as IMAGENS NUMERADAS para encontrar contradições factuais, especialmente em dimensões, dados específicos dos produtos.",
         "Siga estes passos:",
-        "1. Primeiro, analise CADA imagem e extraia todas as especificações numéricas visíveis e relacione com (profundidade, largura, altura, peso, etc.) do produto na imagem.",
+        "1. Primeiro, analise CADA imagem e extraia todas as especificações numéricas visíveis tais como Profundidade, Largura, Altura, peso, etc.).",
         "2. Segundo, compare os números extraídos das imagens com os dados fornecidos na seção 'DADOS TEXTUAIS'.",
         "3. Terceiro, se encontrar uma contradição numérica, descreva-a de forma clara e objetiva, comparando e mencionando os valores exatos do texto e da imagem.",
         "4. É OBRIGATÓRIO citar o número da imagem onde a inconsistência foi encontrada (ex: 'Na Imagem 2...').",
@@ -322,6 +322,7 @@ async def run_optimization_pipeline(request: OptimizeRequest):
         optimized_listing_report=optimization_report,
         asin=asin, country=country
     )
+
 
 
 
