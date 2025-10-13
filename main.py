@@ -188,51 +188,51 @@ async def analyze_product_with_gemini(product_data: dict, country: str) -> str:
                 f"**Título:** {title}\n"
                 f"**Conteúdo do anúncio:**\n{full_text_content}\n"
                 f"**Dimensões (texto):** {product_dimensions_text}")
-prompt_parts = [
-    "You are a meticulous e-commerce QA analyst specialized in numerical data validation and Amazon listings.",
-    "Your task is to compare the TEXTUAL DATA of a product with its NUMBERED IMAGES to find factual contradictions, especially in dimensions, technical details, and numerical specifications.",
-    "All your analysis and reasoning should be in English, but your final answer must be written entirely in **Portuguese**.",
-
-    "Follow these steps:",
-    "1. First, carefully examine EACH image and extract all visible numerical specifications (e.g., depth, width, height, weight, voltage, battery duration, etc.).",
-    "2. Then, compare the extracted numbers from the images with the values found in the section 'TEXTUAL DATA'.",
-    "3. If you find a numerical contradiction, clearly describe it, explicitly comparing the values from the text and the image.",
-    "4. It is MANDATORY to mention the image number where the inconsistency was found (e.g., 'Na Imagem 2...').",
-    "5. Analyze and compare Listing Data — textual content and product dimensions — and produce a clear and concise report listing ALL discrepancies found.",
-    "6. Discrepancies may include:",
-    "- Contradictory information (e.g., text says '10h battery' while image shows '8h battery').",
-    "- Features mentioned in text but not visible or confirmed in images.",
-    "- Important features visible in images but not mentioned in text.",
-    "- Technical details (dimensions, weight, materials) inconsistent between text and images.",
-    "- Any factual or visual inconsistency that could affect the customer’s purchase decision.",
-    "- For each discrepancy, provide a short, objective justification explaining why it is considered an inconsistency.",
-
-    "7. After factual analysis, evaluate whether the listing follows Amazon’s BEST PRACTICES:",
-    "- Title: should include brand, product type, material, color/size, and not contain promotional terms.",
-    "- Bullets: check for clarity, 5 bullet points, focus on benefits and differentiators.",
-    "- Images: white background for main image, high resolution, lifestyle images, and different angles.",
-    "- Description: should be clear, structured, focused on benefits and relevant technical info.",
-    "- Keywords: ensure relevant search terms and SEO balance without excessive repetition.",
-    "- Variations: verify if color/size options are correctly grouped under one listing.",
-    "- Price and Stock: evaluate competitiveness and detect possible stock-out signs.",
-    "- Reviews: ensure there are no mentions of ratings or reviews in the text.",
-    "- A+ Content: identify presence of Enhanced Brand Content elements (if applicable).",
-
-    "8. Finally, produce **two sections** in your final answer (in Portuguese):",
-    "- **Inconsistências Fatuais entre Texto e Imagens** (if none, state 'Nenhuma inconsistência factual encontrada').",
-    "- **Avaliação de Boas Práticas de Listing** (list strengths followed by improvement points).",
-
-    "\n--- TEXTUAL DATA OF THE PRODUCT ---",
-    f"**Título:** {title}",
-    f"**Product Listing Text Content:**\n{full_text_content}",
-    f"**Product Dimensions (text):** {product_dimensions_text}",
-    "\n--- IMAGES FOR VISUAL ANALYSIS (numbered sequentially from 1) ---",
-]
-
-for i, url in enumerate(image_urls[:5], start=1):
-    prompt_parts.append(f"Image {i}: {url}")
-
-prompt_text = "\n".join(prompt_parts)
+    prompt_parts = [
+        "You are a meticulous e-commerce QA analyst specialized in numerical data validation and Amazon listings.",
+        "Your task is to compare the TEXTUAL DATA of a product with its NUMBERED IMAGES to find factual contradictions, especially in dimensions, technical details, and numerical specifications.",
+        "All your analysis and reasoning should be in English, but your final answer must be written entirely in **Portuguese**.",
+    
+        "Follow these steps:",
+        "1. First, carefully examine EACH image and extract all visible numerical specifications (e.g., depth, width, height, weight, voltage, battery duration, etc.).",
+        "2. Then, compare the extracted numbers from the images with the values found in the section 'TEXTUAL DATA'.",
+        "3. If you find a numerical contradiction, clearly describe it, explicitly comparing the values from the text and the image.",
+        "4. It is MANDATORY to mention the image number where the inconsistency was found (e.g., 'Na Imagem 2...').",
+        "5. Analyze and compare Listing Data — textual content and product dimensions — and produce a clear and concise report listing ALL discrepancies found.",
+        "6. Discrepancies may include:",
+        "- Contradictory information (e.g., text says '10h battery' while image shows '8h battery').",
+        "- Features mentioned in text but not visible or confirmed in images.",
+        "- Important features visible in images but not mentioned in text.",
+        "- Technical details (dimensions, weight, materials) inconsistent between text and images.",
+        "- Any factual or visual inconsistency that could affect the customer’s purchase decision.",
+        "- For each discrepancy, provide a short, objective justification explaining why it is considered an inconsistency.",
+    
+        "7. After factual analysis, evaluate whether the listing follows Amazon’s BEST PRACTICES:",
+        "- Title: should include brand, product type, material, color/size, and not contain promotional terms.",
+        "- Bullets: check for clarity, 5 bullet points, focus on benefits and differentiators.",
+        "- Images: white background for main image, high resolution, lifestyle images, and different angles.",
+        "- Description: should be clear, structured, focused on benefits and relevant technical info.",
+        "- Keywords: ensure relevant search terms and SEO balance without excessive repetition.",
+        "- Variations: verify if color/size options are correctly grouped under one listing.",
+        "- Price and Stock: evaluate competitiveness and detect possible stock-out signs.",
+        "- Reviews: ensure there are no mentions of ratings or reviews in the text.",
+        "- A+ Content: identify presence of Enhanced Brand Content elements (if applicable).",
+    
+        "8. Finally, produce **two sections** in your final answer (in Portuguese):",
+        "- **Inconsistências Fatuais entre Texto e Imagens** (if none, state 'Nenhuma inconsistência factual encontrada').",
+        "- **Avaliação de Boas Práticas de Listing** (list strengths followed by improvement points).",
+    
+        "\n--- TEXTUAL DATA OF THE PRODUCT ---",
+        f"**Título:** {title}",
+        f"**Product Listing Text Content:**\n{full_text_content}",
+        f"**Product Dimensions (text):** {product_dimensions_text}",
+        "\n--- IMAGES FOR VISUAL ANALYSIS (numbered sequentially from 1) ---",
+    ]
+    
+    for i, url in enumerate(image_urls[:5], start=1):
+        prompt_parts.append(f"Image {i}: {url}")
+    
+    prompt_text = "\n".join(prompt_parts)
 
     try:
         response = await client.chat.completions.create(
