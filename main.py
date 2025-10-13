@@ -188,51 +188,51 @@ async def analyze_product_with_gemini(product_data: dict, country: str) -> str:
                 f"**Título:** {title}\n"
                 f"**Conteúdo do anúncio:**\n{full_text_content}\n"
                 f"**Dimensões (texto):** {product_dimensions_text}")
-    prompt_parts = [
-    "Você é um analista de QA de e-commerce extremamente meticuloso e com foco em dados numéricos.",
-    "Priorize a busca por inconsistências em especificações técnicas, recursos, nomes e funcionalidades. Além disso, verifique se existem informações que aparentam ser equivocadas ou erradas a respeito dos produtos.",
-    "Sua tarefa é comparar os DADOS TEXTUAIS de um produto com as IMAGENS NUMERADAS para encontrar contradições factuais, especialmente em dimensões, dados específicos dos produtos.",
+prompt_parts = [
+    "You are a meticulous e-commerce QA analyst specialized in numerical data validation and Amazon listings.",
+    "Your task is to compare the TEXTUAL DATA of a product with its NUMBERED IMAGES to find factual contradictions, especially in dimensions, technical details, and numerical specifications.",
+    "All your analysis and reasoning should be in English, but your final answer must be written entirely in **Portuguese**.",
 
-    "Siga estes passos:",
-    "1. Primeiro, analise CADA imagem e extraia todas as especificações numéricas visíveis tais como Profundidade, Largura, Altura, peso, etc.).",
-    "2. Segundo, compare os números extraídos das imagens com os dados fornecidos na seção 'DADOS TEXTUAIS'.",
-    "3. Terceiro, se encontrar uma contradição numérica, descreva-a de forma clara e objetiva, comparando e mencionando os valores exatos do texto e da imagem.",
-    "4. É OBRIGATÓRIO citar o número da imagem onde a inconsistência foi encontrada (ex: 'Na Imagem 2...').",
-    "5. Analise e compare os Dados do Listing - Conteúdo textual do anúncio e Dimensões do Produto (texto). Crie um relatório claro e conciso listando TODAS as discrepâncias encontradas.",
-    "6. Discrepâncias podem ser:\n"
-    "- Informações contraditórias (ex: texto diz 'bateria de 10h', imagem mostra 'bateria de 8h').\n"
-    "- Recursos mencionados no texto mas não mostrados ou validados nas imagens.\n"
-    "- Recursos ou textos importantes visíveis nas imagens mas não mencionados na descrição textual.\n"
-    "- Preste muita atenção a detalhes técnicos, como dimensões, peso, material, etc, nas imagens que estejam possivelmente inconsistentes com as informações textuais.\n"
-    "- Qualquer erro ou inconsistência que possa afetar a decisão de compra do cliente.\n"
-    "- Se houver discrepâncias, forneça uma explicação clara do porquê de cada uma ser considerada uma discrepância.\n"
-    "- Agrupe as discrepâncias por tipo, se possível, para facilitar a análise.",
+    "Follow these steps:",
+    "1. First, carefully examine EACH image and extract all visible numerical specifications (e.g., depth, width, height, weight, voltage, battery duration, etc.).",
+    "2. Then, compare the extracted numbers from the images with the values found in the section 'TEXTUAL DATA'.",
+    "3. If you find a numerical contradiction, clearly describe it, explicitly comparing the values from the text and the image.",
+    "4. It is MANDATORY to mention the image number where the inconsistency was found (e.g., 'Na Imagem 2...').",
+    "5. Analyze and compare Listing Data — textual content and product dimensions — and produce a clear and concise report listing ALL discrepancies found.",
+    "6. Discrepancies may include:",
+    "- Contradictory information (e.g., text says '10h battery' while image shows '8h battery').",
+    "- Features mentioned in text but not visible or confirmed in images.",
+    "- Important features visible in images but not mentioned in text.",
+    "- Technical details (dimensions, weight, materials) inconsistent between text and images.",
+    "- Any factual or visual inconsistency that could affect the customer’s purchase decision.",
+    "- For each discrepancy, provide a short, objective justification explaining why it is considered an inconsistency.",
 
-    "7. Além das inconsistências factuais, avalie também se o product listing segue as BOAS PRÁTICAS da Amazon:",
-    "- Título: deve incluir marca, tipo de produto, material, cor/tamanho e não conter termos promocionais proibidos.\n"
-    "- Bullets: verificar clareza, uso de 5 bullets, foco em benefícios e diferenciais.\n"
-    "- Imagens: fundo branco na principal, alta qualidade, lifestyle images, ângulos diferentes e proporção adequada do produto.\n"
-    "- Descrição: verificar se está clara, organizada, focada em benefícios e informações técnicas relevantes.\n"
-    "- Palavras-chave: analisar se contém termos relevantes para busca e SEO, sem repetição excessiva.\n"
-    "- Variações: checar se estão organizadas sob um único listing (cores/tamanhos).\n"
-    "- Preço e Estoque: avaliar se são competitivos e se não há indícios de stock-out.\n"
-    "- Avaliações: verificar se há menções de reviews no texto (o que é proibido) ou inconsistências.\n"
-    "- Conteúdo A+: avaliar se há elementos de Enhanced Brand Content (se aplicável).",
+    "7. After factual analysis, evaluate whether the listing follows Amazon’s BEST PRACTICES:",
+    "- Title: should include brand, product type, material, color/size, and not contain promotional terms.",
+    "- Bullets: check for clarity, 5 bullet points, focus on benefits and differentiators.",
+    "- Images: white background for main image, high resolution, lifestyle images, and different angles.",
+    "- Description: should be clear, structured, focused on benefits and relevant technical info.",
+    "- Keywords: ensure relevant search terms and SEO balance without excessive repetition.",
+    "- Variations: verify if color/size options are correctly grouped under one listing.",
+    "- Price and Stock: evaluate competitiveness and detect possible stock-out signs.",
+    "- Reviews: ensure there are no mentions of ratings or reviews in the text.",
+    "- A+ Content: identify presence of Enhanced Brand Content elements (if applicable).",
 
-    "8. Ao final, entregue dois blocos de resultados:",
-    "- **Inconsistências Fatuais entre Texto e Imagens** (se houver; caso contrário, declare 'Nenhuma inconsistência factual encontrada').\n"
-    "- **Avaliação de Boas Práticas de Listing** (listando pontos positivos seguidos de pontos a melhorar).",
+    "8. Finally, produce **two sections** in your final answer (in Portuguese):",
+    "- **Inconsistências Fatuais entre Texto e Imagens** (if none, state 'Nenhuma inconsistência factual encontrada').",
+    "- **Avaliação de Boas Práticas de Listing** (list strengths followed by improvement points).",
 
-    "\n--- DADOS TEXTUAIS DO PRODUTO ---",
+    "\n--- TEXTUAL DATA OF THE PRODUCT ---",
     f"**Título:** {title}",
-    f"**Dados do Listing - Conteúdo textual do anúncio:**\n{full_text_content}",
-    f"**Dimensões do Produto (texto):** {product_dimensions_text}",
-    "\n--- IMAGENS PARA ANÁLISE VISUAL (numeradas sequencialmente a partir de 1) ---",
-    ]
+    f"**Product Listing Text Content:**\n{full_text_content}",
+    f"**Product Dimensions (text):** {product_dimensions_text}",
+    "\n--- IMAGES FOR VISUAL ANALYSIS (numbered sequentially from 1) ---",
+]
 
-    for i, url in enumerate(image_urls[:5], start=1):
-        prompt_parts.append(f"Imagem {i}: {url}")
-    prompt_text = "\n".join(prompt_parts)
+for i, url in enumerate(image_urls[:5], start=1):
+    prompt_parts.append(f"Image {i}: {url}")
+
+prompt_text = "\n".join(prompt_parts)
 
     try:
         response = await client.chat.completions.create(
@@ -337,6 +337,7 @@ async def run_optimization_pipeline(request: OptimizeRequest):
         optimized_listing_report=optimization_report,
         asin=asin, country=country
     )
+
 
 
 
